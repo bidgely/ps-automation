@@ -7,5 +7,5 @@ python-dotenv==1.0.1
 # Authlib's Flask/OAuth client imports these directly at runtime but doesn't
 # always declare them as hard dependencies — pinned explicitly here since we
 # hit "ModuleNotFoundError: No module named 'requests'" running this bare.
-requests==2.32.3
+requests==2.33.0
 requests-oauthlib==2.0.0
