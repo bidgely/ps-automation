@@ -28,6 +28,7 @@ Setup (one-time, in Google Cloud Console):
 from flask import Flask, request, jsonify, send_from_directory, session, redirect, url_for
 from flask_cors import CORS
 from authlib.integrations.flask_client import OAuth
+from werkzeug.middleware.proxy_fix import ProxyFix
 from functools import wraps
 import boto3
 import os
@@ -53,11 +54,29 @@ log = logging.getLogger(__name__)
 app = Flask(__name__, static_folder='.')
 CORS(app, supports_credentials=True)
 
+# When this app sits behind a reverse proxy / Kubernetes Ingress / load balancer
+# that terminates TLS (public URL is https://, but Flask itself only ever sees
+# plain http:// traffic internally), url_for(..., _external=True) would otherwise
+# build the OAuth redirect URI with the WRONG scheme — causing a
+# "redirect_uri_mismatch" even when the right URL is registered in Google Cloud
+# Console. ProxyFix makes Flask trust the X-Forwarded-* headers the proxy sets,
+# so it correctly reconstructs https://ops-hub.bidgely.com/auth/callback etc.
+# x_proto=1 / x_host=1 means "trust one hop" — set higher only if you have
+# multiple chained proxies in front of this app.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
 # Session cookie signing key — required for Flask sessions to work.
 # Falls back to a random key generated at process start (fine for local/dev use,
 # but means every server restart invalidates existing sessions — set
 # FLASK_SECRET_KEY explicitly for anything longer-lived than local testing).
 app.secret_key = os.environ.get('FLASK_SECRET_KEY') or pysecrets.token_hex(32)
+
+# Only mark the session cookie "Secure" (HTTPS-only) when actually served over
+# HTTPS — browsers silently drop Secure cookies sent over plain http://, which
+# would break local http://localhost:8080 testing if this were always on.
+# Set SESSION_COOKIE_SECURE=true in the hosted environment's env/Secret.
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', 'false').lower() == 'true'
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # needed for the Google OAuth redirect flow to carry the session cookie back
 
 # ─── GOOGLE SSO CONFIG ───────────────────────────────────────────
 ALLOWED_DOMAIN = 'bidgely.com'
