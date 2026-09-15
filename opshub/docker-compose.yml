@@ -1,0 +1,13 @@
+services:
+  opshub:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    volumes:
+      # Lets boto3 use your local AWS CLI credentials/profiles inside the
+      # container (read-only) — fine for local dev. In a real deployment
+      # (EC2/ECS/etc.) use an IAM instance/task role instead and drop this.
+      - ~/.aws:/home/appuser/.aws:ro
+    restart: unless-stopped

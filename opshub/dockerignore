@@ -1,0 +1,13 @@
+# Never bake secrets into the image — pass them at runtime instead
+# (--env-file .env, or your orchestrator's secret manager)
+.env
+.env.*
+
+__pycache__/
+*.pyc
+.git/
+.gitignore
+.DS_Store
+venv/
+.venv/
+*.egg-info/
