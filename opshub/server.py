@@ -31,11 +31,15 @@ from authlib.integrations.flask_client import OAuth
 from werkzeug.middleware.proxy_fix import ProxyFix
 from functools import wraps
 import boto3
+from botocore.exceptions import ClientError
 import os
 import json
 import time
 import logging
 import secrets as pysecrets
+import threading
+import uuid
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 
 # Load variables from a .env file sitting next to this script, if one exists.
@@ -126,6 +130,166 @@ def login_required(f):
             return jsonify({'status': 'error', 'message': 'Not logged in'}), 401
         return f(*args, **kwargs)
     return wrapper
+
+
+def admin_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if not session.get('user'):
+            return jsonify({'status': 'error', 'message': 'Not logged in'}), 401
+        if session['user']['role'] != 'admin':
+            return jsonify({'status': 'error', 'message': 'Admin access required'}), 403
+        return f(*args, **kwargs)
+    return wrapper
+
+
+def admin_or_ps_required(f):
+    """Viewing the shared Run History is open to admin + PS (user role) —
+    matches ROLE_CONFIG on the frontend. Destructive actions (clearing it)
+    stay behind admin_required instead."""
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if not session.get('user'):
+            return jsonify({'status': 'error', 'message': 'Not logged in'}), 401
+        if session['user']['role'] not in ('admin', 'user'):
+            return jsonify({'status': 'error', 'message': 'Access required'}), 403
+        return f(*args, **kwargs)
+    return wrapper
+
+
+# ─── SHARED RUN LOG ──────────────────────────────────────────────
+# This used to live in each browser's localStorage (nobody could see anyone
+# else's runs), then briefly on the container's local disk (lost on every
+# pod restart/reschedule, and not shared across replicas). Both problems are
+# solved by storing it in S3 instead — the same bucket/pattern already used
+# for the BC Schedule Tracker proxy, just a different key.
+#
+# Remaining caveat, worth knowing: every write here is a full read-modify-write
+# (GET the whole file, append, PUT it back), guarded by a lock that only
+# protects THIS process — if you ever scale to more than one replica, two
+# pods writing at nearly the same moment could still race and one write could
+# clobber the other. Fine for a single-instance internal tool; if this needs
+# to be safe under real concurrent writers, move to DynamoDB (or S3 with
+# conditional writes) instead of a single JSON blob.
+RUN_LOG_S3_BUCKET = 'bidgely-support-ps'
+RUN_LOG_S3_KEY     = 'opshub/run_log.json'
+RUN_LOG_RETENTION_DAYS = 120  # ~4 months
+_run_log_lock = threading.Lock()
+
+
+def _load_run_log():
+    try:
+        s3 = get_s3_client()
+        obj = s3.get_object(Bucket=RUN_LOG_S3_BUCKET, Key=RUN_LOG_S3_KEY)
+        return json.loads(obj['Body'].read())
+    except ClientError as e:
+        if e.response.get('Error', {}).get('Code') in ('NoSuchKey', '404'):
+            return []  # first run ever — nothing written yet, not an error
+        log.exception('Failed to read run log from S3 — treating as empty')
+        return []
+    except Exception:
+        log.exception('Failed to read/parse run log from S3 — treating as empty')
+        return []
+
+
+def _save_run_log(entries):
+    s3 = get_s3_client()
+    s3.put_object(
+        Bucket=RUN_LOG_S3_BUCKET,
+        Key=RUN_LOG_S3_KEY,
+        Body=json.dumps(entries).encode('utf-8'),
+        ContentType='application/json',
+    )
+
+
+def _prune_run_log(entries):
+    cutoff = datetime.now(timezone.utc) - timedelta(days=RUN_LOG_RETENTION_DAYS)
+    kept = []
+    for e in entries:
+        try:
+            ts = datetime.fromisoformat(e['timestamp'].replace('Z', '+00:00'))
+        except (KeyError, ValueError):
+            kept.append(e)  # keep anything we can't parse rather than silently losing it
+            continue
+        if ts >= cutoff:
+            kept.append(e)
+    return kept
+
+
+@app.route('/api/logs', methods=['GET'])
+@admin_or_ps_required
+def get_logs():
+    return jsonify({'status': 'ok', 'logs': _load_run_log()})
+
+
+@app.route('/api/logs/summary', methods=['GET'])
+@login_required
+def get_logs_summary():
+    """Lightweight, shared stats for the per-tab 'Last Run / Total Runs /
+    Last Status' cards — open to EVERY logged-in role (including delivery),
+    unlike /api/logs itself, since it only returns aggregate counts for one
+    service type, not the raw history (tickets, other users, queue names)."""
+    run_type = request.args.get('type')
+    entries = _load_run_log()
+    if run_type:
+        entries = [e for e in entries if e.get('type') == run_type]
+
+    total_sent = sum(e.get('sent', 0) for e in entries)
+    last = entries[0] if entries else None  # newest-first already
+
+    return jsonify({
+        'status': 'ok',
+        'totalRuns': len(entries),
+        'totalSent': total_sent,
+        'lastRun': last,
+    })
+
+
+@app.route('/api/logs', methods=['POST'])
+@login_required
+def post_log():
+    """Any logged-in user can log THEIR OWN run — user/username come from the
+    server-side session, never from the request body, so nobody can spoof
+    who actually ran something."""
+    data = request.json or {}
+    user = session['user']
+
+    entry = {
+        'id': uuid.uuid4().hex,
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'user': user.get('name') or user['email'],
+        'username': user['email'],
+        'type': data.get('type', '—'),
+        'ticket': data.get('ticket') or '—',
+        'env': data.get('env', '—'),
+        'queue': data.get('queue', '—'),
+        'measurement': data.get('measurement') or '—',
+        'entries': data.get('entries', 0),
+        'sent': data.get('sent', 0),
+        'failed': data.get('failed', 0),
+        'status': (
+            'TERMINATED' if data.get('terminated')
+            else 'OK' if data.get('failed', 0) == 0
+            else 'FAILED' if data.get('sent', 0) == 0
+            else 'PARTIAL'
+        ),
+    }
+
+    with _run_log_lock:
+        entries = _load_run_log()
+        entries.insert(0, entry)
+        entries = _prune_run_log(entries)
+        _save_run_log(entries)
+
+    return jsonify({'status': 'ok', 'entry': entry})
+
+
+@app.route('/api/logs', methods=['DELETE'])
+@admin_required
+def delete_logs():
+    with _run_log_lock:
+        _save_run_log([])
+    return jsonify({'status': 'ok'})
 
 
 # ─── AUTH ROUTES ─────────────────────────────────────────────────

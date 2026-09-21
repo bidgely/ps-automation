@@ -525,7 +525,7 @@
     <span class="tab-icon">✦</span> Runbook Creation
   </div>
   <div class="nav-tab" data-tab="admin" id="admin-tab" onclick="switchTab('admin')" style="display:none;margin-left:auto;">
-    <span class="tab-icon">⚙</span> Admin
+    <span class="tab-icon">⚙</span> Run History
   </div>
 </nav>
 
@@ -557,7 +557,7 @@
         <div class="stat-sub">No recent executions</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Total Runs (session)</div>
+        <div class="stat-label">Total Runs</div>
         <div class="stat-val" id="stat-runs">0</div>
         <div class="stat-sub">Messages dispatched</div>
       </div>
@@ -817,7 +817,7 @@
         <div class="stat-sub">No recent executions</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Total Runs (session)</div>
+        <div class="stat-label">Total Runs</div>
         <div class="stat-val" id="d-stat-runs">0</div>
         <div class="stat-sub">Messages dispatched</div>
       </div>
@@ -1009,7 +1009,7 @@
         <div class="stat-sub">No recent executions</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Total Runs (session)</div>
+        <div class="stat-label">Total Runs</div>
         <div class="stat-val" id="rc-stat-runs">0</div>
         <div class="stat-sub">Messages dispatched</div>
       </div>
@@ -1418,7 +1418,7 @@
   <!-- ═══════════════════════ ADMIN TAB ═══════════════════════ -->
   <div class="page" id="page-admin">
     <div class="page-header">
-      <div class="page-title">Admin — Run Reports</div>
+      <div class="page-title">Run History</div>
       <div class="page-sub">Full audit log of all dispatches across all teams</div>
     </div>
 
@@ -1427,7 +1427,7 @@
       <div class="stat-card">
         <div class="stat-label">Total Runs</div>
         <div class="stat-val" id="adm-total-runs">0</div>
-        <div class="stat-sub">All time (this session)</div>
+        <div class="stat-sub">All time (last 4 months)</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Total Entries Processed</div>
@@ -1479,9 +1479,10 @@
           <input class="form-input" type="text" id="adm-filter-ticket" placeholder="e.g. INTPS-1234" oninput="renderAdminTable()" style="font-family:var(--mono);">
         </div>
         <div style="flex:0;padding-top:20px;display:flex;gap:8px;">
+          <button class="btn btn-outline btn-sm" onclick="refreshAdminLog()">↻ Refresh</button>
           <button class="btn btn-outline btn-sm" onclick="clearAdminFilters()">Clear</button>
           <button class="btn btn-outline btn-sm" onclick="exportRunLog()">↓ Export CSV</button>
-          <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);" onclick="clearRunLog()">✕ Clear Log</button>
+          <button class="btn btn-outline btn-sm" id="clear-log-btn" style="color:var(--danger);border-color:var(--danger);" onclick="clearRunLog()">✕ Clear Log</button>
         </div>
       </div>
     </div>
@@ -1527,7 +1528,7 @@
 // not actual access to the dispatch/data routes.
 const ROLE_CONFIG = {
   admin:    { tabs: ['rerun','disagg','ratecomp','bctracker','bc','runbook','admin'], queueFilter: null },
-  user:     { tabs: ['rerun','disagg','ratecomp','bctracker','bc','runbook'],         queueFilter: null },
+  user:     { tabs: ['rerun','disagg','ratecomp','bctracker','bc','runbook','admin'], queueFilter: null },
   delivery: { tabs: ['rerun'],                                            queueFilter: 'priority' },
 };
 
@@ -1556,12 +1557,14 @@ function applySession(user) {
 
   document.querySelectorAll('.nav-tab[data-tab]').forEach(tab => {
     const t = tab.dataset.tab;
-    if (t === 'admin') {
-      tab.style.display = user.role === 'admin' ? 'flex' : 'none';
-    } else {
-      tab.style.display = roleConf.tabs.includes(t) ? 'flex' : 'none';
-    }
+    tab.style.display = roleConf.tabs.includes(t) ? 'flex' : 'none';
   });
+
+  // Run History is now visible to PS (user role) as well as admin, but clearing
+  // the shared history stays an admin-only action — the backend enforces this
+  // too, this just avoids showing a button that would 403 for everyone else.
+  const clearLogBtn = document.getElementById('clear-log-btn');
+  if (clearLogBtn) clearLogBtn.style.display = user.role === 'admin' ? 'inline-flex' : 'none';
 
   const deliveryBadge = document.getElementById('delivery-badge');
   if (deliveryBadge) deliveryBadge.style.display = user.role === 'delivery' ? 'inline-flex' : 'none';
@@ -1572,6 +1575,13 @@ function applySession(user) {
   switchTab(roleConf.tabs[0]);
   populateQueues();
   updateAdminStats();
+
+  // Populate the "Last Run / Total Runs / Last Status" cards from the shared
+  // backend history right away, rather than waiting for this browser's first
+  // dispatch — these reflect everyone's runs, not just this session's.
+  refreshTabStats('Aggregation', { lastrun: 'stat-lastrun', runs: 'stat-runs', status: 'stat-status', statusSub: 'stat-status-sub' });
+  refreshTabStats('Disaggregation', { lastrun: 'd-stat-lastrun', runs: 'd-stat-runs', status: 'd-stat-status', statusSub: 'd-stat-status-sub' });
+  refreshTabStats('Rate Comparison', { lastrun: 'rc-stat-lastrun', runs: 'rc-stat-runs', status: 'rc-stat-status', statusSub: 'rc-stat-status-sub' });
 }
 
 function showLoginScreen() {
@@ -1594,44 +1604,80 @@ async function doLogout() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// RUN LOG
+// RUN LOG — shared across the team via the backend (was localStorage,
+// which meant nobody could see anyone else's runs). getRunLog() stays a
+// synchronous reader of a local cache so the rest of this file (stats,
+// table rendering, CSV export) didn't need to change — only fetchRunLog()
+// actually talks to the server, and callers await/refresh through that.
 // ═══════════════════════════════════════════════════════════════
-const RUN_LOG_KEY = 'opshub_run_log';
+let runLogCache = [];
+
+// Matches RUN_LOG_RETENTION_DAYS in server.py — pruning itself now happens
+// server-side on every write; this is only used for the "Retention: N days" label.
+const RUN_LOG_RETENTION_DAYS = 120; // ~4 months
 
 function getRunLog() {
-  try { return JSON.parse(localStorage.getItem(RUN_LOG_KEY) || '[]'); }
-  catch { return []; }
-}
-function saveRunLog(log) { localStorage.setItem(RUN_LOG_KEY, JSON.stringify(log)); }
-
-// Retention: keep records for this many days (change to suit your needs)
-const RUN_LOG_RETENTION_DAYS = 90;
-
-function pruneRunLog(log) {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - RUN_LOG_RETENTION_DAYS);
-  return log.filter(r => new Date(r.timestamp) >= cutoff);
+  return runLogCache;
 }
 
-function logRun(entry) {
-  let log = getRunLog();
-  log.unshift({
-    id:          Date.now(), // unique ID
-    timestamp:   new Date().toISOString(),
-    user:        currentUser?.name  || '—',
-    username:    currentUser?.email || '—',
-    type:        entry.type,
-    ticket:      entry.ticket || '—',
-    env:         entry.env,
-    queue:       entry.queue,
-    measurement: entry.measurement || '—',
-    entries:     entry.entries,
-    sent:        entry.sent,
-    failed:      entry.failed,
-    status:      entry.terminated ? 'TERMINATED' : entry.failed === 0 ? 'OK' : entry.sent === 0 ? 'FAILED' : 'PARTIAL',
-  });
-  log = pruneRunLog(log); // auto-drop records older than retention window
-  saveRunLog(log);
+async function fetchRunLog() {
+  try {
+    const resp = await fetch('/api/logs', { credentials: 'same-origin' });
+    if (!resp.ok) { runLogCache = []; return; }
+    const data = await resp.json();
+    runLogCache = data.logs || [];
+  } catch (err) {
+    runLogCache = [];
+  }
+}
+
+// Populates a tab's "Last Run / Total Runs / Last Status" cards from the
+// SHARED backend history for that service type — visible to everyone, not
+// just runs dispatched in this one browser session. Open to every role
+// (including delivery), since /api/logs/summary only returns aggregate
+// counts for one type, not the raw log.
+async function refreshTabStats(type, elIds) {
+  try {
+    const resp = await fetch(`/api/logs/summary?type=${encodeURIComponent(type)}`, { credentials: 'same-origin' });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const last = data.lastRun;
+
+    document.getElementById(elIds.runs).textContent = data.totalRuns ?? 0;
+
+    if (!last) {
+      document.getElementById(elIds.lastrun).textContent = '—';
+      document.getElementById(elIds.status).innerHTML = '—';
+      document.getElementById(elIds.statusSub).textContent = 'Awaiting execution';
+      return;
+    }
+
+    document.getElementById(elIds.lastrun).textContent = new Date(last.timestamp).toLocaleString('en-GB');
+    const statusHtml = last.status === 'TERMINATED' ? '<span style="color:var(--danger);">⏹ Terminated</span>'
+      : last.status === 'OK'          ? '<span style="color:var(--success);">✔ OK</span>'
+      : last.status === 'FAILED'      ? '<span style="color:var(--danger);">✖ Failed</span>'
+      : '<span style="color:var(--warn);">⚠ Partial</span>';
+    document.getElementById(elIds.status).innerHTML = statusHtml;
+    document.getElementById(elIds.statusSub).textContent = `${last.env} · ${last.measurement} · ${last.sent} msg(s)`;
+  } catch (err) {
+    // leave whatever was already showing rather than blanking it on a transient network error
+  }
+}
+
+async function logRun(entry) {
+  try {
+    await fetch('/api/logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(entry),
+    });
+  } catch (err) {
+    console.error('Failed to save run log entry', err);
+  }
+  // Refresh the cache so the Admin tab (if open) reflects this run immediately —
+  // harmless no-op cost for non-admins since they can't fetch /api/logs anyway.
+  await fetchRunLog();
   updateAdminStats();
 }
 
@@ -1698,6 +1744,12 @@ function renderAdminTable() {
   }).join('');
 }
 
+async function refreshAdminLog() {
+  await fetchRunLog();
+  updateAdminStats();
+  renderAdminTable();
+}
+
 function clearAdminFilters() {
   document.getElementById('adm-filter-type').value   = '';
   document.getElementById('adm-filter-env').value    = '';
@@ -1718,9 +1770,15 @@ function exportRunLog() {
   a.click();
 }
 
-function clearRunLog() {
+async function clearRunLog() {
   if (!confirm('Clear all run history? This cannot be undone.')) return;
-  localStorage.removeItem(RUN_LOG_KEY);
+  try {
+    await fetch('/api/logs', { method: 'DELETE', credentials: 'same-origin' });
+  } catch (err) {
+    alert('Failed to clear run history — check your connection and try again.');
+    return;
+  }
+  await fetchRunLog();
   updateAdminStats();
   renderAdminTable();
 }
@@ -1738,7 +1796,7 @@ function switchTab(tab) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
   document.getElementById(`page-${tab}`).classList.add('active');
-  if (tab === 'admin') renderAdminTable();
+  if (tab === 'admin') { fetchRunLog().then(() => { updateAdminStats(); renderAdminTable(); }); }
   if (tab === 'bctracker' && !bctData) loadBcTracker();
 }
 
@@ -1866,7 +1924,6 @@ let currentEnv = 'NA2';
 let currentMeasurement = 'ELECTRIC';
 let deleteBeforeRun = false;
 let sendNotifications = false;
-let runCount = 0;
 let uuidMode = 'single';   // 'single' | 'file'
 let timeMode = 'manual';   // 'manual' | 'perrow'
 let loadedUuids = [];      // parsed from uploaded file
@@ -2233,23 +2290,13 @@ async function dispatchRun() {
         ? '<span style="color:var(--danger);">✖ Failed</span>'
         : '<span style="color:var(--warn);">⚠ Partial</span>';
 
-  runCount++;
-  document.getElementById('stat-lastrun').textContent = new Date().toLocaleTimeString('en-GB');
-  document.getElementById('stat-runs').textContent = runCount;
-  document.getElementById('stat-status').innerHTML = aggStopRequested
-    ? '<span style="color:var(--danger);">⏹ Terminated</span>'
-    : totalFailed === 0
-      ? '<span style="color:var(--success);">✔ OK</span>'
-      : totalSent === 0
-        ? '<span style="color:var(--danger);">✖ Failed</span>'
-        : '<span style="color:var(--warn);">⚠ Partial</span>';
-  document.getElementById('stat-status-sub').textContent = `${currentEnv} · ${currentMeasurement} · ${totalSent} msg(s)`;
-  logRun({
+  await logRun({
     type: 'Aggregation', ticket: ticketNumber, env: currentEnv,
     queue: qname, measurement: currentMeasurement,
     entries: uuids.length, sent: totalSent, failed: totalFailed,
     terminated: aggStopRequested,
   });
+  refreshTabStats('Aggregation', { lastrun: 'stat-lastrun', runs: 'stat-runs', status: 'stat-status', statusSub: 'stat-status-sub' });
 
   isAggRunning = false;
   aggAbortCtrl = null;
@@ -2327,7 +2374,6 @@ const DISAGG_ENV_CONFIG = {
 };
 
 let dCurrentEnv = 'NA2';
-let dRunCount = 0;
 let dUuidMode = 'single';
 let dTimeMode = 'manual';
 let dLoadedUuids = [];
@@ -2582,23 +2628,13 @@ async function dDispatchRun() {
         ? '<span style="color:var(--danger);">✖ Failed</span>'
         : '<span style="color:var(--warn);">⚠ Partial</span>';
 
-  dRunCount++;
-  document.getElementById('d-stat-lastrun').textContent = new Date().toLocaleTimeString('en-GB');
-  document.getElementById('d-stat-runs').textContent = dRunCount;
-  document.getElementById('d-stat-status').innerHTML = disaggStopRequested
-    ? '<span style="color:var(--danger);">⏹ Terminated</span>'
-    : totalFailed === 0
-      ? '<span style="color:var(--success);">✔ OK</span>'
-      : totalSent === 0
-        ? '<span style="color:var(--danger);">✖ Failed</span>'
-        : '<span style="color:var(--warn);">⚠ Partial</span>';
-  document.getElementById('d-stat-status-sub').textContent = `${dCurrentEnv} · ${totalSent} msg(s)`;
-  logRun({
+  await logRun({
     type: 'Disaggregation', ticket: ticketNumber, env: dCurrentEnv,
     queue: qname, measurement: '—',
     entries: uuids.length, sent: totalSent, failed: totalFailed,
     terminated: disaggStopRequested,
   });
+  refreshTabStats('Disaggregation', { lastrun: 'd-stat-lastrun', runs: 'd-stat-runs', status: 'd-stat-status', statusSub: 'd-stat-status-sub' });
 
   isDisaggRunning = false;
   disaggAbortCtrl = null;
@@ -2629,7 +2665,6 @@ const RC_ENV_CONFIG = {
 
 let rcCurrentEnv = 'NA2';
 let rcCurrentMeasurement = 'ELECTRIC';
-let rcRunCount = 0;
 let rcUuidMode = 'single';
 let rcLoadedUuids = [];
 
@@ -2859,23 +2894,13 @@ async function rcDispatchRun() {
         ? '<span style="color:var(--danger);">✖ Failed</span>'
         : '<span style="color:var(--warn);">⚠ Partial</span>';
 
-  rcRunCount++;
-  document.getElementById('rc-stat-lastrun').textContent = new Date().toLocaleTimeString('en-GB');
-  document.getElementById('rc-stat-runs').textContent = rcRunCount;
-  document.getElementById('rc-stat-status').innerHTML = rcStopRequested
-    ? '<span style="color:var(--danger);">⏹ Terminated</span>'
-    : totalFailed === 0
-      ? '<span style="color:var(--success);">✔ OK</span>'
-      : totalSent === 0
-        ? '<span style="color:var(--danger);">✖ Failed</span>'
-        : '<span style="color:var(--warn);">⚠ Partial</span>';
-  document.getElementById('rc-stat-status-sub').textContent = `${rcCurrentEnv} · ${rcCurrentMeasurement} · ${totalSent} msg(s)`;
-  logRun({
+  await logRun({
     type: 'Rate Comparison', ticket: ticketNumber, env: rcCurrentEnv,
     queue: qname, measurement: rcCurrentMeasurement,
     entries: uuids.length, sent: totalSent, failed: totalFailed,
     terminated: rcStopRequested,
   });
+  refreshTabStats('Rate Comparison', { lastrun: 'rc-stat-lastrun', runs: 'rc-stat-runs', status: 'rc-stat-status', statusSub: 'rc-stat-status-sub' });
 
   isRcRunning = false;
   rcAbortCtrl = null;
