@@ -10,6 +10,13 @@ this same directory (loaded automatically at startup):
     GOOGLE_CLIENT_ID       - OAuth 2.0 Client ID from Google Cloud Console
     GOOGLE_CLIENT_SECRET   - OAuth 2.0 Client Secret
     FLASK_SECRET_KEY       - any long random string, used to sign the session cookie
+    HER_REVOKE_ACCESS_TOKEN - OPTIONAL fallback access token for the notifications-revoke
+                              API used by the HER Revocation tab. This token is shared
+                              across the team and regenerated fresh every day, so day to
+                              day it's set from the tab itself (Admin role, "Revoke Access
+                              Token" card) — that's stored in her_revocation.py's
+                              .her_revoke_token.json, not here. This env var only matters
+                              on a fresh install before anyone has pasted a token yet.
 
 Example .env file (create as `.env` next to server.py):
     GOOGLE_CLIENT_ID=123456789-abc.apps.googleusercontent.com
@@ -23,6 +30,11 @@ Setup (one-time, in Google Cloud Console):
      (add your real deployed URL's /auth/callback too, once hosted elsewhere)
   4. Copy the Client ID and Client Secret into the .env file above
   5. On the OAuth consent screen, restrict to Internal / your Workspace org if prompted
+
+Testing locally without Google OAuth set up: set OPSHUB_LOCAL_NO_AUTH=1 in your .env
+to skip SSO entirely — every request is then treated as a fixed local admin user
+(override with OPSHUB_LOCAL_USER_EMAIL / _NAME / _ROLE). Never set this anywhere
+other than your own machine — there is no login screen to get past once it's on.
 """
 
 from flask import Flask, request, jsonify, send_from_directory, session, redirect, url_for
@@ -51,6 +63,15 @@ try:
     load_dotenv()
 except ImportError:
     pass  # falls back to whatever's already in the shell environment (or nothing)
+
+# HER Revocation lives in its own script (her_revocation.py, next to this file) —
+# it's a standalone module you can also run by hand from the command line, and
+# this server just imports it rather than duplicating its logic inline.
+from her_revocation import (
+    REVOKE_API_CONFIG, get_env_token as get_her_revoke_token, revoke_many,
+    get_token_status, set_token as set_her_revoke_token,
+    record_audit_entry as record_her_audit_entry, get_audit_log as get_her_audit_log,
+)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 log = logging.getLogger(__name__)
@@ -123,9 +144,28 @@ def resolve_role(email):
     return 'delivery'
 
 
+# ─── LOCAL DEV: optional auth bypass ─────────────────────────────
+# Set OPSHUB_LOCAL_NO_AUTH=1 to skip Google SSO entirely and treat every
+# request as a fixed local user — for running this on your own machine
+# without setting up a Google OAuth client. NEVER set this anywhere other
+# than your own laptop; it is off by default and there is no login screen
+# to get past once it's on. Role defaults to 'admin' so every tab (incl.
+# HER Revocation) is visible; override with OPSHUB_LOCAL_USER_ROLE if you
+# want to test as 'user' or 'delivery' instead.
+LOCAL_NO_AUTH = os.environ.get('OPSHUB_LOCAL_NO_AUTH', '').strip().lower() in ('1', 'true', 'yes')
+LOCAL_DEV_USER = {
+    'email': os.environ.get('OPSHUB_LOCAL_USER_EMAIL', 'local-dev@bidgely.com'),
+    'name':  os.environ.get('OPSHUB_LOCAL_USER_NAME', 'Local Dev'),
+    'role':  os.environ.get('OPSHUB_LOCAL_USER_ROLE', 'admin'),
+}
+
+
 def login_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
+        if LOCAL_NO_AUTH:
+            session.setdefault('user', LOCAL_DEV_USER)
+            return f(*args, **kwargs)
         if not session.get('user'):
             return jsonify({'status': 'error', 'message': 'Not logged in'}), 401
         return f(*args, **kwargs)
@@ -135,6 +175,8 @@ def login_required(f):
 def admin_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
+        if LOCAL_NO_AUTH:
+            session.setdefault('user', LOCAL_DEV_USER)
         if not session.get('user'):
             return jsonify({'status': 'error', 'message': 'Not logged in'}), 401
         if session['user']['role'] != 'admin':
@@ -149,6 +191,8 @@ def admin_or_ps_required(f):
     stay behind admin_required instead."""
     @wraps(f)
     def wrapper(*args, **kwargs):
+        if LOCAL_NO_AUTH:
+            session.setdefault('user', LOCAL_DEV_USER)
         if not session.get('user'):
             return jsonify({'status': 'error', 'message': 'Not logged in'}), 401
         if session['user']['role'] not in ('admin', 'user'):
@@ -338,6 +382,9 @@ def logout():
 
 @app.route('/api/me')
 def api_me():
+    if LOCAL_NO_AUTH:
+        session.setdefault('user', LOCAL_DEV_USER)
+        return jsonify({'status': 'ok', 'user': session['user']})
     user = session.get('user')
     if not user:
         return jsonify({'status': 'error', 'message': 'Not logged in'}), 401
@@ -486,12 +533,16 @@ def bc_dashboard_status():
 
 def check_dispatch_permission(role, script_type, queue_name):
     """Mirrors the frontend's ROLE_CONFIG so it can't be bypassed with a raw API call.
-    'delivery' role only ever has the Aggregation Re-Run tab, restricted to the priority queue."""
+    'delivery' role only ever has the Aggregation Re-Run tab, restricted to the priority queue.
+    'her_revocation' is open to admin + PS (user role) — same as everything else except
+    'delivery', which stays excluded (delivery only ever gets the Aggregation Re-Run tab)."""
     if role == 'delivery':
         if script_type != 'aggregation':
             return False, 'Your role does not have access to this service'
         if 'priority' not in (queue_name or '').lower():
             return False, 'Your role is restricted to the priority queue only'
+    if script_type == 'her_revocation' and role not in ('admin', 'user'):
+        return False, 'HER Revocation is restricted to admin and PS team members'
     return True, None
 
 
@@ -507,8 +558,8 @@ def dispatch_aggregation():
     queue_name   = data['queue_name']
     uuids        = data['uuids']          # list of uuid strings
     hid          = data.get('hid', 1)
-    start_ts     = data.get('start_ts', 0)
-    end_ts       = data.get('end_ts', 0)
+    start_ts_raw = data.get('start_ts', 0)
+    end_ts_raw   = data.get('end_ts', 0)
     ct           = data.get('consumption_types', ['ENERGY_CONSUMPTION'])
     modes        = data.get('agg_modes', ['HOUR', 'DAY', 'MONTH'])
     measurement  = data.get('measurement_type', 'ELECTRIC')
@@ -516,12 +567,31 @@ def dispatch_aggregation():
     send_notifs  = data.get('send_notifications', False)
     threads      = data.get('threads', 2)
 
+    # start_ts / end_ts arrive as EITHER a single value applied to every uuid
+    # (manual time mode) OR a list with one value per uuid, positionally
+    # matched to `uuids` (per-row time mode, from an uploaded file's own
+    # start/end columns). Normalize to a per-uuid list either way, so each
+    # uuid always gets its own scalar timestamp. Previously a per-row list
+    # was passed straight through as a single value shared by every uuid —
+    # Python's f-string then rendered the whole Python list as text, so the
+    # actual message sent was start="[170..., 170..., ...]" repeated for
+    # every uuid in the batch, which every consumer correctly rejects as
+    # malformed.
+    start_ts_list = start_ts_raw if isinstance(start_ts_raw, list) else [start_ts_raw] * len(uuids)
+    end_ts_list   = end_ts_raw   if isinstance(end_ts_raw, list)   else [end_ts_raw] * len(uuids)
+    if len(start_ts_list) != len(uuids) or len(end_ts_list) != len(uuids):
+        return jsonify({
+            'status': 'error',
+            'message': f'start_ts/end_ts count ({len(start_ts_list)}/{len(end_ts_list)}) does not match uuid count ({len(uuids)})',
+        }), 400
+
     try:
         sqs       = get_sqs_client('aggregation', env)
         queue_url = build_queue_url('aggregation', env, queue_name)
         results   = {'sent': [], 'failed': []}
 
-        def send_one(uuid):
+        def send_one(item):
+            uuid, start_ts, end_ts = item
             body = build_aggregation_msg(uuid, hid, start_ts, end_ts, ct, modes, measurement, delete_first, send_notifs)
             try:
                 mid = send_message(sqs, queue_url, body)
@@ -532,7 +602,7 @@ def dispatch_aggregation():
                 results['failed'].append({'uuid': uuid, 'error': str(e)})
 
         with ThreadPoolExecutor(max_workers=threads) as ex:
-            ex.map(send_one, uuids)
+            ex.map(send_one, zip(uuids, start_ts_list, end_ts_list))
 
         return jsonify({
             'status': 'ok',
@@ -558,16 +628,31 @@ def dispatch_disaggregation():
     queue_name = data['queue_name']
     uuids    = data['uuids']
     hid      = data.get('hid', 1)
-    start_ts = data.get('start_ts', 0)
-    end_ts   = data.get('end_ts', 0)
+    start_ts_raw = data.get('start_ts', 0)
+    end_ts_raw   = data.get('end_ts', 0)
     threads  = data.get('threads', 2)
+
+    # See the identical comment in dispatch_aggregation above — start_ts/end_ts
+    # can arrive as a single value (manual mode) or a per-uuid list (per-row
+    # mode, from an uploaded file's own start/end columns). This used to pass
+    # a per-row list straight through as if it were one shared value, so every
+    # uuid in the batch got sent the literal text "[170..., 170..., ...]" as
+    # its start/end — which every consumer correctly rejects as malformed.
+    start_ts_list = start_ts_raw if isinstance(start_ts_raw, list) else [start_ts_raw] * len(uuids)
+    end_ts_list   = end_ts_raw   if isinstance(end_ts_raw, list)   else [end_ts_raw] * len(uuids)
+    if len(start_ts_list) != len(uuids) or len(end_ts_list) != len(uuids):
+        return jsonify({
+            'status': 'error',
+            'message': f'start_ts/end_ts count ({len(start_ts_list)}/{len(end_ts_list)}) does not match uuid count ({len(uuids)})',
+        }), 400
 
     try:
         sqs       = get_sqs_client('disaggregation', env)
         queue_url = build_queue_url('disaggregation', env, queue_name)
         results   = {'sent': [], 'failed': []}
 
-        def send_one(uuid):
+        def send_one(item):
+            uuid, start_ts, end_ts = item
             body = build_disaggregation_msg(uuid, hid, start_ts, end_ts)
             try:
                 mid = send_message(sqs, queue_url, body)
@@ -578,7 +663,7 @@ def dispatch_disaggregation():
                 results['failed'].append({'uuid': uuid, 'error': str(e)})
 
         with ThreadPoolExecutor(max_workers=threads) as ex:
-            ex.map(send_one, uuids)
+            ex.map(send_one, zip(uuids, start_ts_list, end_ts_list))
 
         return jsonify({
             'status': 'ok',
@@ -639,15 +724,120 @@ def dispatch_rate_comparison():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+# ─── HER REVOCATION ──────────────────────────────────────────────
+# The actual revoke logic, token storage, and audit log all live in
+# her_revocation.py — these routes are a thin admin-only wrapper around it.
+
+@app.route('/api/her/token-status', methods=['GET'])
+@admin_or_ps_required
+def her_token_status():
+    """Never returns the token itself — only whether one is set and who/when it was
+    last updated via the UI, so this is safe to poll from the HER Revocation tab."""
+    return jsonify({'status': 'ok', **get_token_status()})
+
+
+@app.route('/api/her/token', methods=['POST'])
+@admin_or_ps_required
+def her_set_token():
+    data = request.json or {}
+    try:
+        meta = set_her_revoke_token(data.get('token', ''), session['user']['email'])
+        log.info(f"HER revoke token updated by {session['user']['email']}")
+        return jsonify({'status': 'ok', 'updated_by': meta['updated_by'], 'updated_at': meta['updated_at']})
+    except ValueError as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 400
+
+
+@app.route('/dispatch/her_revocation', methods=['POST'])
+@admin_or_ps_required
+def dispatch_her_revocation():
+    data = request.json
+    role = session['user']['role']
+    ok, err = check_dispatch_permission(role, 'her_revocation', '')
+    if not ok:
+        return jsonify({'status': 'error', 'message': err}), 403
+
+    env               = data.get('env', 'NA2')
+    notification_ids  = data['notification_ids']   # list of notification-id strings
+    forced_revoke     = data.get('forced_revoke', True)
+    threads           = data.get('threads', 2)
+    ticket_number     = (data.get('ticket_number') or '').strip()
+
+    if env not in REVOKE_API_CONFIG:
+        return jsonify({'status': 'error', 'message': f'No revoke host configured for env {env} yet'}), 400
+
+    if not ticket_number:
+        return jsonify({'status': 'error', 'message': 'A ticket number is required for every revocation run'}), 400
+
+    token = get_her_revoke_token()
+    if not token:
+        log.error('HER revoke attempted with no HER_REVOKE_ACCESS_TOKEN set')
+        return jsonify({'status': 'error', 'message': 'No revoke token configured on the server — ask an admin to set today\'s token'}), 500
+
+    actor = session['user']['email']
+    log.info(f'HER revoke requested by {actor} — ticket={ticket_number} env={env} count={len(notification_ids)} forced_revoke={forced_revoke}')
+    try:
+        # revoke_many (from her_revocation.py) does the actual work — threaded
+        # calls against the external API, with a built-in single retry per id.
+        results = revoke_many(notification_ids, token, env=env, forced_revoke=forced_revoke, threads=threads)
+        log.info(f'HER revoke by {actor} complete — sent={len(results["sent"])} failed={len(results["failed"])}')
+
+        # One audit row per dispatch call — a multi-batch UI run ends up with one
+        # row per batch, same granularity as the log lines above. This is what
+        # backs the tab's Revocation History card, so any admin can see who
+        # revoked what, on which ticket, regardless of whose browser ran it.
+        record_her_audit_entry(
+            actor=actor, ticket=ticket_number, env=env,
+            total=len(notification_ids), sent=len(results['sent']), failed=len(results['failed']),
+            forced_revoke=forced_revoke,
+            failed_ids=[f['notification_id'] for f in results['failed']],
+        )
+
+        return jsonify({
+            'status': 'ok',
+            'total':  len(notification_ids),
+            'sent':   len(results['sent']),
+            'failed': len(results['failed']),
+            'results': results,
+        })
+    except Exception as e:
+        log.exception('HER revocation dispatch error')
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/her/audit', methods=['GET'])
+@admin_or_ps_required
+def her_audit_log():
+    ticket = request.args.get('ticket') or None
+    env    = request.args.get('env') or None
+    actor  = request.args.get('actor') or None
+    limit  = request.args.get('limit', 200)
+    try:
+        limit = int(limit)
+    except ValueError:
+        limit = 200
+    entries = get_her_audit_log(limit=limit, ticket=ticket, env=env, actor=actor)
+    return jsonify({'status': 'ok', 'entries': entries})
+
+
 if __name__ == '__main__':
-    missing = [v for v in ('GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET') if not os.environ.get(v)]
-    if missing:
-        print('\n  ⚠ Missing required environment variable(s): ' + ', '.join(missing))
-        print('  Google sign-in will fail with "invalid_client" until these are set.')
-        print('  Set them in a .env file next to server.py, e.g.:')
-        print('    GOOGLE_CLIENT_ID=...')
-        print('    GOOGLE_CLIENT_SECRET=...')
-        print('    FLASK_SECRET_KEY=...\n')
+    if LOCAL_NO_AUTH:
+        print('\n  ⚠ OPSHUB_LOCAL_NO_AUTH is on — Google SSO is BYPASSED.')
+        print(f"    Every request is treated as {LOCAL_DEV_USER['email']} (role={LOCAL_DEV_USER['role']}).")
+        print('    Do not set this anywhere other than your own machine.\n')
+    else:
+        missing = [v for v in ('GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET') if not os.environ.get(v)]
+        if missing:
+            print('\n  ⚠ Missing required environment variable(s): ' + ', '.join(missing))
+            print('  Google sign-in will fail with "invalid_client" until these are set.')
+            print('  Set them in a .env file next to server.py, e.g.:')
+            print('    GOOGLE_CLIENT_ID=...')
+            print('    GOOGLE_CLIENT_SECRET=...')
+            print('    FLASK_SECRET_KEY=...')
+            print('  ...or set OPSHUB_LOCAL_NO_AUTH=1 in .env to skip login entirely for local testing.\n')
+    if not get_token_status()['set']:
+        print('  ⚠ No HER revoke token set — HER Revocation tab will fail until an admin')
+        print('    pastes today\'s token there, or HER_REVOKE_ACCESS_TOKEN is set as a fallback.\n')
     print('\n  PS Internal Ops Dashboard')
     print('  http://localhost:8080\n')
     app.run(host='0.0.0.0', port=8080, debug=False)
