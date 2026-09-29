@@ -45,7 +45,7 @@ to skip SSO entirely — every request is then treated as a fixed local admin us
 other than your own machine — there is no login screen to get past once it's on.
 """
 
-from flask import Flask, request, jsonify, send_from_directory, session, redirect, url_for
+from flask import Flask, request, jsonify, send_from_directory, session, redirect, url_for, Response
 from flask_cors import CORS
 from authlib.integrations.flask_client import OAuth
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -79,6 +79,9 @@ from her_revocation import (
     REVOKE_API_CONFIG, get_env_token as get_her_revoke_token, revoke_many,
     get_token_status, set_token as set_her_revoke_token,
     record_audit_entry as record_her_audit_entry, get_audit_log as get_her_audit_log,
+    start_audit_entry as start_her_audit_entry, update_audit_entry as update_her_audit_entry,
+    save_failed_ids as save_her_failed_ids, get_failed_ids as get_her_failed_ids,
+    save_checkpoint as save_her_checkpoint, get_checkpoint as get_her_checkpoint,
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -808,6 +811,7 @@ def dispatch_her_revocation():
     forced_revoke     = data.get('forced_revoke', True)
     threads           = data.get('threads', 2)
     ticket_number     = (data.get('ticket_number') or '').strip()
+    record_audit      = data.get('record_audit', True)
 
     if env not in REVOKE_API_CONFIG:
         return jsonify({'status': 'error', 'message': f'No revoke host configured for env {env} yet'}), 400
@@ -826,29 +830,200 @@ def dispatch_her_revocation():
         # revoke_many (from her_revocation.py) does the actual work — threaded
         # calls against the external API, with a built-in single retry per id.
         results = revoke_many(notification_ids, token, env=env, forced_revoke=forced_revoke, threads=threads)
-        log.info(f'HER revoke by {actor} complete — sent={len(results["sent"])} failed={len(results["failed"])}')
+        already_done = results.get('already_done', [])
+        log.info(f'HER revoke by {actor} complete — sent={len(results["sent"])} already_done={len(already_done)} failed={len(results["failed"])}')
 
-        # One audit row per dispatch call — a multi-batch UI run ends up with one
-        # row per batch, same granularity as the log lines above. This is what
-        # backs the tab's Revocation History card, so any admin can see who
-        # revoked what, on which ticket, regardless of whose browser ran it.
-        record_her_audit_entry(
-            actor=actor, ticket=ticket_number, env=env,
-            total=len(notification_ids), sent=len(results['sent']), failed=len(results['failed']),
-            forced_revoke=forced_revoke,
-            failed_ids=[f['notification_id'] for f in results['failed']],
-        )
+        # By default, one audit row per dispatch call. A multi-batch UI run instead
+        # sends record_audit=false on every per-batch call, having already created
+        # one row via POST /api/her/audit/run/start and updating it after each
+        # batch via /api/her/audit/run/<id>/update — so Revocation History shows
+        # one row per run, not one per batch, and that row stays current even if
+        # the browser closes mid-run. The CLI and any single-shot caller still get
+        # an automatic row here.
+        if record_audit:
+            # Audit logging must never be able to turn a real, completed revoke
+            # into a reported failure — if the audit store is unreachable (e.g.
+            # no/expired AWS credentials locally), log it and move on; the
+            # revoke result above already happened and is what the caller cares
+            # about most.
+            try:
+                record_her_audit_entry(
+                    actor=actor, ticket=ticket_number, env=env,
+                    total=len(notification_ids),
+                    # An "already revoked"-type response means this ID is already
+                    # in the state we wanted, so it counts toward sent/done, not
+                    # toward failed — see ALREADY_DONE_PHRASES in her_revocation.py.
+                    sent=len(results['sent']) + len(already_done),
+                    failed=len(results['failed']),
+                    forced_revoke=forced_revoke,
+                    failed_ids=[f['notification_id'] for f in results['failed']],
+                )
+            except Exception:
+                log.exception('Failed to write HER audit log entry — the revoke above still succeeded')
 
         return jsonify({
             'status': 'ok',
             'total':  len(notification_ids),
             'sent':   len(results['sent']),
+            'already_done': len(already_done),
             'failed': len(results['failed']),
             'results': results,
         })
     except Exception as e:
         log.exception('HER revocation dispatch error')
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/her/audit/run/start', methods=['POST'])
+@admin_or_ps_required
+def her_audit_run_start():
+    """Creates the one Revocation History row a multi-batch UI run will keep
+    updating in place (see /api/her/audit/run/<id>/update), instead of each
+    batch writing its own row. Returns run_id for the frontend to hand back on
+    every subsequent update."""
+    data = request.json or {}
+    role = session['user']['role']
+    ok, err = check_dispatch_permission(role, 'her_revocation', '')
+    if not ok:
+        return jsonify({'status': 'error', 'message': err}), 403
+
+    ticket_number = (data.get('ticket_number') or '').strip()
+    if not ticket_number:
+        return jsonify({'status': 'error', 'message': 'A ticket number is required'}), 400
+    env = data.get('env', 'NA2')
+    try:
+        total = int(data.get('total', 0))
+    except (TypeError, ValueError):
+        total = 0
+
+    actor = session['user']['email']
+    try:
+        run_id = start_her_audit_entry(
+            actor=actor, ticket=ticket_number, env=env,
+            total=total, forced_revoke=bool(data.get('forced_revoke', True)),
+        )
+    except Exception:
+        log.exception('Failed to start HER audit run — dispatch will fall back to per-batch logging')
+        return jsonify({'status': 'error', 'message': 'Could not start audit run (audit store unreachable)'}), 502
+    return jsonify({'status': 'ok', 'run_id': run_id})
+
+
+@app.route('/api/her/audit/run/<run_id>/update', methods=['POST'])
+@admin_or_ps_required
+def her_audit_run_update(run_id):
+    """Updates the single row from /api/her/audit/run/start with cumulative
+    totals after another batch completes. Called repeatedly through a long run
+    (once per batch) so the row reflects real progress even if the run never
+    reaches its final update — e.g. the browser tab closes mid-run."""
+    data = request.json or {}
+    role = session['user']['role']
+    ok, err = check_dispatch_permission(role, 'her_revocation', '')
+    if not ok:
+        return jsonify({'status': 'error', 'message': err}), 403
+
+    try:
+        sent = int(data.get('sent', 0))
+        failed = int(data.get('failed', 0))
+    except (TypeError, ValueError):
+        return jsonify({'status': 'error', 'message': 'sent/failed must be numbers'}), 400
+
+    try:
+        status = update_her_audit_entry(
+            run_id, sent=sent, failed=failed,
+            status=data.get('status'),
+            failed_ids=data.get('failed_ids'),
+        )
+    except Exception:
+        log.exception('Failed to update HER audit run — revoke batches are unaffected by this')
+        return jsonify({'status': 'error', 'message': 'Could not update audit run (audit store unreachable)'}), 502
+    if status is None:
+        return jsonify({'status': 'error', 'message': 'run_id not found in audit log'}), 404
+    return jsonify({'status': 'ok', 'audit_status': status})
+
+
+@app.route('/api/her/audit/run/<run_id>/failed_ids', methods=['POST'])
+@admin_or_ps_required
+def her_audit_run_save_failed_ids(run_id):
+    """Saves the COMPLETE failed-entries list for a run (not the 50-item
+    preview kept on the audit row itself). The UI calls this once, when a run
+    finishes, with everything that failed across every batch."""
+    data = request.json or {}
+    role = session['user']['role']
+    ok, err = check_dispatch_permission(role, 'her_revocation', '')
+    if not ok:
+        return jsonify({'status': 'error', 'message': err}), 403
+
+    entries = data.get('failed_ids') or []
+    try:
+        save_her_failed_ids(run_id, entries)
+    except Exception:
+        log.exception('Failed to save full HER failed-ids list — the run itself already completed fine')
+        return jsonify({'status': 'error', 'message': 'Could not save failed-ids list (audit store unreachable)'}), 502
+    return jsonify({'status': 'ok', 'count': len(entries)})
+
+
+@app.route('/api/her/audit/run/<run_id>/failed_ids', methods=['GET'])
+@admin_or_ps_required
+def her_audit_run_get_failed_ids(run_id):
+    """Returns the complete failed-entries list for a run — as JSON, or as a
+    downloadable CSV with ?format=csv (what the Revocation History table's
+    download link uses)."""
+    entries = get_her_failed_ids(run_id)
+    if request.args.get('format') == 'csv':
+        import csv, io
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(['notification_id', 'error', 'detail'])
+        for e in entries:
+            writer.writerow([e.get('notification_id', ''), e.get('error', ''), e.get('detail', '')])
+        return Response(
+            buf.getvalue(),
+            mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment; filename=her_revocation_failed_{run_id}.csv'},
+        )
+    return jsonify({'status': 'ok', 'entries': entries})
+
+
+@app.route('/api/her/checkpoint/<signature>', methods=['GET'])
+@admin_or_ps_required
+def her_checkpoint_get(signature):
+    """Returns the saved resume position for this file (identified by the
+    frontend's name+size signature), or null if there isn't one — the
+    "Resume from here" suggestion on the HER Revocation tab."""
+    try:
+        checkpoint = get_her_checkpoint(signature)
+    except Exception:
+        log.exception('Failed to read HER checkpoint')
+        return jsonify({'status': 'error', 'message': 'Could not read checkpoint (audit store unreachable)'}), 502
+    return jsonify({'status': 'ok', 'checkpoint': checkpoint})
+
+
+@app.route('/api/her/checkpoint/<signature>', methods=['POST'])
+@admin_or_ps_required
+def her_checkpoint_save(signature):
+    """Saves how far a run has gotten into this file. Called after every
+    batch — best-effort on the frontend, so a failure here never affects the
+    revoke itself, only whether "Resume from here" is offered next time."""
+    data = request.json or {}
+    role = session['user']['role']
+    ok, err = check_dispatch_permission(role, 'her_revocation', '')
+    if not ok:
+        return jsonify({'status': 'error', 'message': err}), 403
+
+    try:
+        position = int(data.get('position', 0))
+        total = int(data.get('total', 0))
+    except (TypeError, ValueError):
+        return jsonify({'status': 'error', 'message': 'position/total must be numbers'}), 400
+
+    try:
+        checkpoint = save_her_checkpoint(signature, position, total, ticket=data.get('ticket'), env=data.get('env'))
+    except ValueError as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 400
+    except Exception:
+        log.exception('Failed to save HER checkpoint — the run itself is unaffected')
+        return jsonify({'status': 'error', 'message': 'Could not save checkpoint (audit store unreachable)'}), 502
+    return jsonify({'status': 'ok', 'checkpoint': checkpoint})
 
 
 @app.route('/api/her/audit', methods=['GET'])

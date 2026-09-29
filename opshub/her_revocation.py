@@ -41,6 +41,7 @@ Or import it:
 """
 
 import os
+import re
 import csv
 import json
 import time
@@ -140,44 +141,73 @@ def build_revoke_url(notification_id, token, env=DEFAULT_ENV, forced_revoke=True
 
 def revoke_notification(notification_id, token, env=DEFAULT_ENV, forced_revoke=True, retry_once=True, timeout=30):
     """POSTs a single revoke call; on a non-200 response or network error, retries
-    once before giving up. Returns (ok: bool, status_or_error): the HTTP status code
-    on a completed request, or a short error string if the request itself failed.
-    Never includes the token in what it returns — safe to log or write to a file."""
+    once before giving up. Returns (ok, status_or_error, body_snippet): the HTTP
+    status code (or a short error string if the request itself failed), plus up
+    to 300 characters of the response body so a caller can see *why* it failed —
+    e.g. an "already revoked"-type message that means the end state is already
+    correct, vs. something that actually needs attention — instead of just a
+    bare status code. Never includes the token in what it returns — safe to log
+    or write to a file."""
     url = build_revoke_url(notification_id, token, env, forced_revoke)
     attempts = 2 if retry_once else 1
     last_status = None
+    last_body = ''
     for attempt in range(attempts):
         try:
             resp = requests.post(url, timeout=timeout)
             last_status = resp.status_code
             if resp.status_code == 200:
-                return True, resp.status_code
+                return True, resp.status_code, ''
+            last_body = (resp.text or '').strip()[:300]
         except requests.RequestException as e:
             last_status = str(e)
+            last_body = ''
         if attempt < attempts - 1:
             log.warning(f'retrying notification_id={notification_id} after attempt {attempt + 1} -> {last_status}')
-    return False, last_status
+    return False, last_status, last_body
+
+
+# Substrings that, if seen in a failed call's response body (case-insensitive),
+# mean the notification is already in the state we wanted — so it should count
+# as done, not as a failure needing attention. Starts empty on purpose: we
+# haven't yet confirmed the exact wording naapi2's 412s use, and guessing wrong
+# here would silently mark a real problem as "success". Once a real response
+# body is seen (it'll show up in a failed batch's log / detail field), add its
+# distinctive phrase(s) here, e.g. ['already revoked', 'already processed'].
+ALREADY_DONE_PHRASES = []
+
+
+def _looks_already_done(body):
+    body_l = (body or '').lower()
+    return any(p in body_l for p in ALREADY_DONE_PHRASES)
 
 
 def revoke_many(notification_ids, token, env=DEFAULT_ENV, forced_revoke=True, threads=2):
     """Revokes a list of notification IDs concurrently (bounded by `threads`).
-    Returns {'sent': [...], 'failed': [...]} — 'sent' entries have {notification_id,
-    status}; 'failed' entries have {notification_id, error}. Never touches the
-    filesystem — callers (the CLI below, or ops-hub) decide what to do with the result."""
-    results = {'sent': [], 'failed': []}
+    Returns {'sent': [...], 'failed': [...], 'already_done': [...]} — 'sent'
+    entries have {notification_id, status}; 'failed' entries have
+    {notification_id, error, detail} (detail is the response body, if any);
+    'already_done' entries (a failed call whose body matched ALREADY_DONE_PHRASES)
+    have the same shape as 'failed' but are counted separately since the
+    notification is already in the desired end state. Never touches the
+    filesystem — callers (the CLI below, or ops-hub) decide what to do with the
+    result."""
+    results = {'sent': [], 'failed': [], 'already_done': []}
 
     def _one(notification_id):
-        ok, status = revoke_notification(notification_id, token, env, forced_revoke)
-        return notification_id, ok, status
+        ok, status, body = revoke_notification(notification_id, token, env, forced_revoke)
+        return notification_id, ok, status, body
 
     with ThreadPoolExecutor(max_workers=max(1, threads)) as ex:
         futures = [ex.submit(_one, nid) for nid in notification_ids]
         for fut in as_completed(futures):
-            notification_id, ok, status = fut.result()
+            notification_id, ok, status, body = fut.result()
             if ok:
                 results['sent'].append({'notification_id': notification_id, 'status': status})
+            elif _looks_already_done(body):
+                results['already_done'].append({'notification_id': notification_id, 'error': str(status), 'detail': body})
             else:
-                results['failed'].append({'notification_id': notification_id, 'error': str(status)})
+                results['failed'].append({'notification_id': notification_id, 'error': str(status), 'detail': body})
 
     return results
 
@@ -258,6 +288,59 @@ def record_audit_entry(actor, ticket, env, total, sent, failed, forced_revoke=Tr
     return status
 
 
+def start_audit_entry(actor, ticket, env, total, forced_revoke=True):
+    """Creates a RUNNING audit entry up front and returns its id, so a long
+    multi-batch UI run (hundreds of batches for a large file) can update this
+    one row incrementally as batches complete via update_audit_entry(), instead
+    of either writing a separate row per batch or only writing a row once the
+    entire run finishes — which would lose the whole audit trail if the
+    browser tab closes or crashes partway through a big run."""
+    ticket = (ticket or '').strip() or '—'
+    entry = {
+        'id': uuid.uuid4().hex,
+        'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        'actor': actor,
+        'ticket': ticket,
+        'env': env,
+        'forced_revoke': bool(forced_revoke),
+        'total': total,
+        'sent': 0,
+        'failed': 0,
+        'status': 'RUNNING',
+        'failed_ids': [],
+    }
+    with _audit_lock:
+        entries = _load_audit_log()
+        entries.insert(0, entry)
+        _save_audit_log(entries)
+    return entry['id']
+
+
+def update_audit_entry(entry_id, sent, failed, status=None, failed_ids=None):
+    """Updates an existing entry (by id, from start_audit_entry) in place with
+    new cumulative totals. Called after every batch of a long run so the row
+    always reflects real progress, not just the final outcome. Returns the
+    status that was recorded, or None if entry_id wasn't found (e.g. the audit
+    log was cleared out from under a very long-running dispatch)."""
+    with _audit_lock:
+        entries = _load_audit_log()
+        match = None
+        for e in entries:
+            if e.get('id') == entry_id:
+                match = e
+                break
+        if match is None:
+            return None
+        match['sent'] = sent
+        match['failed'] = failed
+        match['status'] = status or ('OK' if failed == 0 else ('FAILED' if sent == 0 else 'PARTIAL'))
+        if failed_ids is not None:
+            match['failed_ids'] = (failed_ids or [])[:50]
+        match['timestamp'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        _save_audit_log(entries)
+        return match['status']
+
+
 def get_audit_log(limit=200, ticket=None, env=None, actor=None):
     """Most-recent-first audit entries, optionally narrowed by ticket/env/actor
     (ticket and actor match as a substring, env as an exact match)."""
@@ -270,6 +353,109 @@ def get_audit_log(limit=200, ticket=None, env=None, actor=None):
         entries = [e for e in entries if actor.lower() in (e.get('actor') or '').lower()]
     limit = max(1, min(int(limit), 1000))
     return entries[:limit]
+
+
+# Each audit entry only keeps a 50-item preview of its failed IDs (see
+# record_audit_entry/update_audit_entry above) so one huge-failure run doesn't
+# bloat audit_log.json — that file is re-read and re-written in full on every
+# single write, by every admin's browser on every tab load. The complete list
+# for a run lives in its own small S3 object instead, keyed by run_id, and is
+# only written once (at the end of a run), not per batch.
+FAILED_IDS_S3_PREFIX = 'opshub/her_revocation_failed_ids/'
+
+
+def save_failed_ids(run_id, failed_entries):
+    """Stores the complete list of failed entries for one run (each a dict
+    like {notification_id, error, detail}), not capped at 50. Called once,
+    when a UI run finishes — see update_audit_entry for the row itself."""
+    s3 = _get_audit_s3_client()
+    s3.put_object(
+        Bucket=AUDIT_S3_BUCKET,
+        Key=f'{FAILED_IDS_S3_PREFIX}{run_id}.json',
+        Body=json.dumps(failed_entries or []).encode('utf-8'),
+        ContentType='application/json',
+    )
+
+
+def get_failed_ids(run_id):
+    """The complete failed-entries list for one run, or [] if none was ever
+    saved for it (a run with zero failures, an older run from before this
+    existed, or the id just doesn't exist)."""
+    try:
+        s3 = _get_audit_s3_client()
+        obj = s3.get_object(Bucket=AUDIT_S3_BUCKET, Key=f'{FAILED_IDS_S3_PREFIX}{run_id}.json')
+        return json.loads(obj['Body'].read())
+    except ClientError as e:
+        if e.response.get('Error', {}).get('Code') in ('NoSuchKey', '404'):
+            return []
+        log.exception('Failed to read HER failed-ids list from S3 — treating as empty')
+        return []
+    except Exception:
+        log.exception('Failed to read/parse HER failed-ids list from S3 — treating as empty')
+        return []
+
+
+# ─── Resume checkpoints ──────────────────────────────────────────
+# Remembers how far into a given file a run has gotten, keyed by a signature
+# the frontend derives from the uploaded file (name + size — see
+# herFileSignature() in index.html; cheap and good enough since this is only
+# a "resume from here?" suggestion the user can always override, not a
+# correctness guarantee). Lets someone re-open the same file later — after a
+# closed tab, a crash, or just coming back the next day — and be offered
+# "resume from record #N" instead of having to remember and retype the skip
+# count themselves.
+CHECKPOINT_S3_PREFIX = 'opshub/her_revocation_checkpoints/'
+
+
+def _checkpoint_s3_key(signature):
+    # signature comes from the browser — sanitize it into a safe S3 key
+    # segment rather than trusting it outright.
+    safe = re.sub(r'[^A-Za-z0-9._-]', '_', signature or '')[:200]
+    if not safe:
+        raise ValueError('Invalid checkpoint signature')
+    return f'{CHECKPOINT_S3_PREFIX}{safe}.json'
+
+
+def save_checkpoint(signature, position, total, ticket=None, env=None):
+    """Records the furthest position reached in this file so far. Called after
+    every batch of a UI run — cheap (a tiny, single-object S3 write, not a
+    read-modify-write of a shared list like the audit log), so it's fine to
+    call this often."""
+    key = _checkpoint_s3_key(signature)
+    data = {
+        'position': int(position),
+        'total': int(total),
+        'ticket': ticket,
+        'env': env,
+        'updated_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+    s3 = _get_audit_s3_client()
+    s3.put_object(
+        Bucket=AUDIT_S3_BUCKET,
+        Key=key,
+        Body=json.dumps(data).encode('utf-8'),
+        ContentType='application/json',
+    )
+    return data
+
+
+def get_checkpoint(signature):
+    """The saved checkpoint for this file signature, or None if there isn't
+    one (a file that's never been run before, or one that finished cleanly
+    and had its checkpoint cleared)."""
+    key = _checkpoint_s3_key(signature)
+    try:
+        s3 = _get_audit_s3_client()
+        obj = s3.get_object(Bucket=AUDIT_S3_BUCKET, Key=key)
+        return json.loads(obj['Body'].read())
+    except ClientError as e:
+        if e.response.get('Error', {}).get('Code') in ('NoSuchKey', '404'):
+            return None
+        log.exception('Failed to read HER checkpoint from S3 — treating as none')
+        return None
+    except Exception:
+        log.exception('Failed to read/parse HER checkpoint from S3 — treating as none')
+        return None
 
 
 # ─── CLI (drop-in replacement for revoke_post_api_na2.py) ───────────────────

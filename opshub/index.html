@@ -1299,10 +1299,27 @@
                 <input type="file" id="her-file-input" accept=".csv,.txt" style="display:none" onchange="herHandleFile(event)">
               </div>
               <div id="her-id-file-preview" style="display:none;margin-top:8px;padding:8px 12px;background:#080a0f;border:1px solid var(--border);border-radius:6px;font-family:var(--mono);font-size:11px;color:var(--muted);max-height:80px;overflow-y:auto;"></div>
+              <div id="her-resume-card" style="display:none;margin-top:10px;padding:10px 14px;background:rgba(245,166,35,0.08);border:1px solid rgba(245,166,35,0.35);border-radius:10px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+                  <div id="her-resume-text" style="flex:1;min-width:200px;font-size:11.5px;color:var(--muted);line-height:1.6;"></div>
+                  <button class="btn btn-outline btn-sm" onclick="herApplyCheckpoint()" style="white-space:nowrap;border-color:var(--warn);color:var(--warn);">↻ Resume from here</button>
+                </div>
+              </div>
               <div class="form-group" style="margin-top:12px;margin-bottom:0;max-width:160px;">
                 <label class="form-label">Batch Size</label>
                 <input class="form-input" type="number" id="her-param-batchsize" value="500" min="1" max="5000" onchange="herUpdatePreview()">
                 <div style="font-size:11px;color:var(--muted);margin-top:4px;">Sent to the backend in batches of this size — keeps large files from timing out and shows per-batch progress below</div>
+              </div>
+              <div id="her-skip-card" style="margin-top:14px;padding:12px 14px;background:rgba(56,232,198,0.04);border:1px solid rgba(56,232,198,0.18);border-radius:10px;transition:background .15s ease,border-color .15s ease;">
+                <div style="display:flex;align-items:center;gap:7px;margin-bottom:9px;">
+                  <span style="font-size:13px;line-height:1;color:var(--accent2);">⏭</span>
+                  <label class="form-label" style="margin-bottom:0;color:var(--accent2);letter-spacing:.04em;">Resume / Skip Point</label>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                  <input class="form-input" type="number" id="her-param-skip" value="0" min="0" oninput="herUpdatePreview()" style="max-width:130px;font-family:var(--mono);">
+                  <div id="her-skip-status" style="font-size:11px;color:var(--muted);font-family:var(--mono);"></div>
+                </div>
+                <div style="font-size:11px;color:var(--muted);margin-top:8px;">Starts from record N+1 in the file instead of the top — use this to resume a run, or to test against records you haven't already tried, without editing the file itself.</div>
               </div>
             </div>
           </div>
@@ -1378,10 +1395,11 @@
               <th>Revoked</th>
               <th>Failed</th>
               <th>Status</th>
+              <th></th>
             </tr>
           </thead>
           <tbody id="her-audit-tbody">
-            <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">Loading...</td></tr>
+            <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:32px;">Loading...</td></tr>
           </tbody>
         </table>
       </div>
@@ -3150,6 +3168,9 @@ let herCurrentEnv = 'NA2';
 let herForcedRevoke = true;
 let herIdMode = 'single';   // 'single' | 'file'
 let herLoadedIds = [];      // parsed from uploaded file
+let herCurrentFileSignature = null; // identifies the uploaded file for checkpoint save/resume — null for a synthetic list (e.g. loaded via "Retry Failed")
+let herLastCheckpoint = null;       // the checkpoint fetched for the currently-loaded file, if any
+let herNotifyPermissionAsked = false;
 
 // ── Revoke access token (admin-managed, write-only) ─────────────
 function herFormatTokenStatus(data) {
@@ -3177,9 +3198,32 @@ async function herLoadTokenStatus() {
 // shows runs made from the browser you're currently sitting at. This reads
 // from the server so every admin sees every revocation, including ones run
 // from the CLI directly.
+// Fires a desktop notification for a run finishing or auto-pausing, so nobody
+// has to sit and watch the log scroll for a run that can take hours. Asks for
+// permission the first time it's needed (not on tab load) and quietly does
+// nothing if the user denies it or the browser doesn't support Notifications.
+async function herNotify(title, body) {
+  try {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'default' && !herNotifyPermissionAsked) {
+      herNotifyPermissionAsked = true;
+      await Notification.requestPermission();
+    }
+    if (Notification.permission === 'granted') {
+      new Notification(title, { body, icon: undefined });
+    }
+  } catch (e) { /* notifications are a convenience, never block on this */ }
+}
+
+function herEscapeAttr(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 function herAuditStatusBadge(status) {
-  if (status === 'OK')      return '<span style="color:var(--success);">✔ OK</span>';
-  if (status === 'FAILED')  return '<span style="color:var(--danger);">✖ Failed</span>';
+  if (status === 'OK')          return '<span style="color:var(--success);">✔ OK</span>';
+  if (status === 'FAILED')      return '<span style="color:var(--danger);">✖ Failed</span>';
+  if (status === 'TERMINATED')  return '<span style="color:var(--danger);">⏹ Terminated</span>';
+  if (status === 'AUTO_PAUSED') return '<span style="color:var(--warn);">⏸ Auto-paused</span>';
   return '<span style="color:var(--warn);">⚠ Partial</span>';
 }
 
@@ -3206,11 +3250,7 @@ async function herUpdateStats() {
     }
 
     document.getElementById('her-stat-lastrun').textContent = new Date(last.timestamp).toLocaleString('en-GB');
-    const statusHtml = last.status === 'TERMINATED' ? '<span style="color:var(--danger);">⏹ Terminated</span>'
-      : last.status === 'OK'     ? '<span style="color:var(--success);">✔ OK</span>'
-      : last.status === 'FAILED' ? '<span style="color:var(--danger);">✖ Failed</span>'
-      : '<span style="color:var(--warn);">⚠ Partial</span>';
-    document.getElementById('her-stat-status').innerHTML = statusHtml;
+    document.getElementById('her-stat-status').innerHTML = herAuditStatusBadge(last.status);
     document.getElementById('her-stat-status-sub').textContent = `${last.env} · ${last.sent} revoked`;
   } catch (err) {
     // leave whatever was already showing rather than blanking it on a transient network error
@@ -3231,12 +3271,12 @@ async function herLoadAuditLog() {
     const resp = await fetch(`/api/her/audit?${params}`, { credentials: 'same-origin' });
     const data = await resp.json();
     if (!resp.ok || data.status !== 'ok') {
-      tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--danger);padding:32px;">${data.message || 'Could not load the audit log.'}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--danger);padding:32px;">${data.message || 'Could not load the audit log.'}</td></tr>`;
       return;
     }
     const entries = data.entries || [];
     if (!entries.length) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">No revocations recorded yet.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:32px;">No revocations recorded yet.</td></tr>';
       return;
     }
     tbody.innerHTML = entries.map(e => `
@@ -3249,10 +3289,16 @@ async function herLoadAuditLog() {
         <td>${e.sent}</td>
         <td>${e.failed}</td>
         <td>${herAuditStatusBadge(e.status)}</td>
+        <td style="white-space:nowrap;">${e.failed > 0 ? `
+          <a href="/api/her/audit/run/${e.id}/failed_ids?format=csv" style="color:var(--accent2);font-size:11px;margin-right:10px;">⬇ Failed IDs</a>
+          <a href="#" data-run-id="${e.id}" data-ticket="${herEscapeAttr(e.ticket || '')}" data-env="${e.env}"
+             onclick="herRetryFailedIds(this.dataset.runId, this.dataset.ticket, this.dataset.env); return false;"
+             style="color:var(--warn);font-size:11px;">↻ Retry Failed</a>
+        ` : ''}</td>
       </tr>
     `).join('');
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--danger);padding:32px;">Could not load the audit log: ${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--danger);padding:32px;">Could not load the audit log: ${err.message}</td></tr>`;
   }
 }
 
@@ -3286,6 +3332,13 @@ function herSelectEnv(el, env) {
   herUpdatePreview();
 }
 
+// Same as herSelectEnv, but driven by the env code alone (e.g. from a "Retry
+// Failed" action) rather than a click on one of the on-screen buttons.
+function herSelectEnvByCode(env) {
+  const btn = document.querySelector(`#her-env-selector .env-btn[data-env="${env}"]`);
+  if (btn) herSelectEnv(btn, env);
+}
+
 function herSetIdMode(mode) {
   herIdMode = mode;
   document.getElementById('her-mode-single').classList.toggle('active', mode === 'single');
@@ -3301,10 +3354,22 @@ function herToggleForced() {
   herUpdatePreview();
 }
 
+// Identifies an uploaded file for checkpoint save/resume purposes. Deliberately
+// simple (name + size) rather than hashing the whole file client-side, which
+// would be slow for a 600k-line CSV — this is advisory only (it powers a
+// "resume from here?" suggestion the user can always override), not a
+// security boundary, so a cheap identity check is the right tradeoff.
+function herFileSignature(file) {
+  return `${file.name}__${file.size}`.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 200);
+}
+
 function herHandleFile(e) {
   const file = e.target.files[0];
   if (!file) return;
   document.getElementById('her-param-filename').value = file.name;
+  herCurrentFileSignature = herFileSignature(file);
+  document.getElementById('her-resume-card').style.display = 'none';
+  herLastCheckpoint = null;
   const reader = new FileReader();
   reader.onload = (ev) => {
     const lines = ev.target.result.split('\n').map(l => l.trim()).filter(Boolean);
@@ -3315,8 +3380,90 @@ function herHandleFile(e) {
     preview.innerHTML = shown.map(l => `<div>${l}</div>`).join('') +
       (herLoadedIds.length > 5 ? `<div style="color:var(--accent);margin-top:2px;">... and ${herLoadedIds.length - 5} more (${herLoadedIds.length} total)</div>` : `<div style="color:var(--accent);margin-top:2px;">${herLoadedIds.length} record(s) loaded</div>`);
     herUpdatePreview();
+    herCheckCheckpoint();
   };
   reader.readAsText(file);
+}
+
+// ── Resume / checkpoint ──────────────────────────────────────────
+// Looks up whether this exact file (by name+size) has a saved position from
+// an earlier run, and if so shows the "Resume from here" suggestion instead
+// of making the user remember and type the skip count themselves.
+async function herCheckCheckpoint() {
+  const card = document.getElementById('her-resume-card');
+  if (!herCurrentFileSignature) { card.style.display = 'none'; return; }
+  try {
+    const resp = await fetch(`/api/her/checkpoint/${encodeURIComponent(herCurrentFileSignature)}`, { credentials: 'same-origin' });
+    const data = await resp.json();
+    const cp = data.status === 'ok' ? data.checkpoint : null;
+    if (cp && cp.position > 0 && cp.position < herLoadedIds.length) {
+      herLastCheckpoint = cp;
+      document.getElementById('her-resume-text').innerHTML =
+        `We found a saved position for this file: record <strong style="color:var(--warn);">#${(cp.position + 1).toLocaleString()}</strong> of ${herLoadedIds.length.toLocaleString()}`
+        + ` (last updated ${new Date(cp.updated_at).toLocaleString()}${cp.ticket ? `, ticket ${cp.ticket}` : ''}).`;
+      card.style.display = 'block';
+    } else {
+      herLastCheckpoint = null;
+      card.style.display = 'none';
+    }
+  } catch (e) {
+    card.style.display = 'none';
+  }
+}
+
+function herApplyCheckpoint() {
+  if (!herLastCheckpoint) return;
+  document.getElementById('her-param-skip').value = herLastCheckpoint.position;
+  document.getElementById('her-resume-card').style.display = 'none';
+  herUpdatePreview();
+}
+
+// Best-effort — a failed checkpoint save never affects the run itself, it just
+// means the "resume from here" suggestion won't be there next time.
+function herSaveCheckpoint(position, total, ticket, env) {
+  if (!herCurrentFileSignature) return;
+  fetch(`/api/her/checkpoint/${encodeURIComponent(herCurrentFileSignature)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ position, total, ticket, env }),
+  }).catch(() => {});
+}
+
+// Loads the complete failed-ID list from a past run back into the form, ready
+// to dispatch again — so a run that ended with some failures doesn't require
+// re-uploading the whole original file and recomputing a skip count just to
+// go after the stragglers.
+async function herRetryFailedIds(runId, ticket, env) {
+  try {
+    const resp = await fetch(`/api/her/audit/run/${runId}/failed_ids`, { credentials: 'same-origin' });
+    const data = await resp.json();
+    if (!resp.ok || data.status !== 'ok' || !data.entries || !data.entries.length) {
+      alert('Could not load the failed IDs for this run (or none were saved for it).');
+      return;
+    }
+    herLoadedIds = data.entries.map(en => en.notification_id).filter(Boolean);
+    herCurrentFileSignature = null; // synthetic list, not a real uploaded file — no checkpoint tracking
+    document.getElementById('her-resume-card').style.display = 'none';
+    herLastCheckpoint = null;
+
+    herSetIdMode('file');
+    document.getElementById('her-param-filename').value = `retry_${herLoadedIds.length}_failed_${runId.slice(0, 8)}.csv`;
+    document.getElementById('her-param-skip').value = 0;
+    const preview = document.getElementById('her-id-file-preview');
+    preview.style.display = 'block';
+    const shown = herLoadedIds.slice(0, 5);
+    preview.innerHTML = shown.map(l => `<div>${l}</div>`).join('') +
+      `<div style="color:var(--warn);margin-top:2px;">${herLoadedIds.length} failed ID(s) loaded from run ${runId.slice(0, 8)} — ready to retry</div>`;
+
+    const ticketInput = document.getElementById('her-param-ticket');
+    ticketInput.value = ticket ? `${ticket}-retry` : '';
+    if (env) herSelectEnvByCode(env);
+    herUpdatePreview();
+    document.getElementById('page-herrevoke').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    ticketInput.focus();
+  } catch (err) {
+    alert(`Could not load failed IDs: ${err.message}`);
+  }
 }
 
 function herUpdatePreview() {
@@ -3326,17 +3473,37 @@ function herUpdatePreview() {
 
   if (dispatchBtn) { dispatchBtn.disabled = false; dispatchBtn.style.opacity = '1'; dispatchBtn.style.cursor = 'pointer'; }
 
+  const herSkipCount = Math.max(0, parseInt(document.getElementById('her-param-skip')?.value) || 0);
   const idForPreview = herIdMode === 'single'
     ? (document.getElementById('her-param-id-single')?.value.trim() || '{notification_id}')
-    : (herLoadedIds[0] || '{notification_id}');
+    : (herLoadedIds[herSkipCount] || herLoadedIds[0] || '{notification_id}');
   const url = `http://${host}/2.1/notifications-revoke/notifications/${idForPreview}?forcedRevoke=${herForcedRevoke}&retry=false&access_token=***`;
+  const herRemainingCount = Math.max(0, herLoadedIds.length - herSkipCount);
   const lines = [
     `POST ${url}`,
     ``,
-    herIdMode === 'single' ? `# single notification, 1 call` : `# ${herLoadedIds.length} notification(s), batched ${document.getElementById('her-param-batchsize')?.value || 500} at a time`,
+    herIdMode === 'single' ? `# single notification, 1 call` : `# ${herLoadedIds.length} notification(s)${herSkipCount ? `, skipping first ${herSkipCount} (${herRemainingCount} remaining)` : ''}, batched ${document.getElementById('her-param-batchsize')?.value || 500} at a time`,
     `# threads: ${document.getElementById('her-param-threads')?.value || 2}  ·  auto-retry once on failure`,
   ];
   if (el) el.textContent = lines.join('\n');
+
+  // Live status + highlight on the Resume/Skip Point card
+  const skipCard = document.getElementById('her-skip-card');
+  const skipStatus = document.getElementById('her-skip-status');
+  if (skipCard && skipStatus) {
+    if (herIdMode === 'file' && herLoadedIds.length) {
+      const pctThrough = Math.round((herSkipCount / herLoadedIds.length) * 100);
+      skipStatus.innerHTML = herSkipCount
+        ? `→ starting at record <strong style="color:var(--accent2);">#${(herSkipCount + 1).toLocaleString()}</strong> · <strong style="color:var(--accent2);">${herRemainingCount.toLocaleString()}</strong> of ${herLoadedIds.length.toLocaleString()} remaining (${pctThrough}% skipped)`
+        : `all ${herLoadedIds.length.toLocaleString()} record(s) will be sent, starting from #1`;
+      skipCard.style.background = herSkipCount ? 'rgba(56,232,198,0.09)' : 'rgba(56,232,198,0.04)';
+      skipCard.style.borderColor = herSkipCount ? 'rgba(56,232,198,0.45)' : 'rgba(56,232,198,0.18)';
+    } else {
+      skipStatus.textContent = herIdMode === 'file' ? 'upload a file to see how many records this will skip' : '';
+      skipCard.style.background = 'rgba(56,232,198,0.04)';
+      skipCard.style.borderColor = 'rgba(56,232,198,0.18)';
+    }
+  }
 }
 
 function herCopyCommand() {
@@ -3351,16 +3518,22 @@ async function herDispatchRun() {
   if (!ticketNumber) { alert('Please enter a ticket number before dispatching.'); document.getElementById('her-param-ticket').focus(); return; }
 
   let ids = [];
+  let skipCount = 0;
   if (herIdMode === 'single') {
     const id = document.getElementById('her-param-id-single').value.trim();
     if (!id) { alert('Please enter a notification ID before dispatching.'); return; }
     ids = [id];
   } else {
     if (!herLoadedIds.length) { alert('Please upload a file with notification IDs before dispatching.'); return; }
-    ids = herLoadedIds;
+    skipCount = Math.max(0, parseInt(document.getElementById('her-param-skip').value) || 0);
+    if (skipCount >= herLoadedIds.length) {
+      alert(`Skip count (${skipCount}) is greater than or equal to the file's ${herLoadedIds.length} record(s) — nothing left to dispatch.`);
+      return;
+    }
+    ids = herLoadedIds.slice(skipCount);
   }
 
-  if (!confirm(`Revoke ${ids.length} notification(s)? This cannot be undone.`)) return;
+  if (!confirm(`Revoke ${ids.length} notification(s)${skipCount ? ` (skipping the first ${skipCount} of ${herLoadedIds.length} in the file)` : ''}? This cannot be undone.`)) return;
 
   isHerRunning = true;
   herStopRequested = false;
@@ -3386,9 +3559,18 @@ async function herDispatchRun() {
   pct.textContent = '0%';
   card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
+  const HER_LOG_MAX_LINES = 300; // cap DOM nodes so a run with thousands of small
+                                  // batches doesn't slow the tab to a crawl
+  let herLogLineCount = 0;
   function appendLog(line) {
     const cls = line.startsWith('[WARN]') ? 't-warn' : line.startsWith('[ERROR]') ? 't-err' : line.startsWith('[SUCCESS]') ? '' : 't-muted';
     logEl.innerHTML += `<div class="${cls}">${line}</div>`;
+    herLogLineCount++;
+    if (herLogLineCount > HER_LOG_MAX_LINES) {
+      // Drop the oldest visible lines rather than let the log grow without
+      // bound — a 33,000-batch run would otherwise render 33,000+ DOM nodes.
+      while (logEl.childNodes.length > HER_LOG_MAX_LINES) logEl.removeChild(logEl.firstChild);
+    }
     logEl.scrollTop = logEl.scrollHeight;
   }
   function setProgress(p, label) {
@@ -3400,20 +3582,66 @@ async function herDispatchRun() {
 
   appendLog(`[INFO]  Ticket: ${ticketNumber}`);
   appendLog(`[INFO]  Environment: ${herCurrentEnv}`);
-  appendLog(`[INFO]  Mode: ${herIdMode === 'single' ? `single ID — ${ids[0]}` : `file — ${ids.length} record(s)`}`);
+  appendLog(`[INFO]  Mode: ${herIdMode === 'single' ? `single ID — ${ids[0]}` : `file — ${ids.length} record(s)${skipCount ? ` (skipped first ${skipCount} of ${herLoadedIds.length})` : ''}`}`);
   appendLog(`[INFO]  forcedRevoke: ${herForcedRevoke}`);
   appendLog(`[INFO]  Batching: ${ids.length} record(s) into ${totalBatches} batch(es) of up to ${batchSize}, ${threads} thread(s) each`);
   setProgress(0, `Batch 0/${totalBatches}...`);
 
-  let totalSent = 0, totalFailed = 0;
+  let totalSent = 0, totalFailed = 0, totalAlreadyDone = 0;
   const allFailed = [];
   let hadError = false;
+
+  // Auto-pause: if several batches in a row fail 100% with the exact same
+  // error, that's almost always something systemic (an expired token, a
+  // network/DNS problem, or the API rejecting every call the same way) —
+  // not the normal handful of per-ID failures. Burning through the rest of a
+  // 600k-ID run against a broken token wastes hours, so stop and say why
+  // instead of grinding on.
+  const AUTO_PAUSE_THRESHOLD = 5;
+  let herFailStreakSignature = null;
+  let herFailStreakCount = 0;
+  let herAutoPaused = false;
+
+  // One Revocation History row for this whole run, created up front and kept
+  // current after every batch — so a run spanning hundreds of batches still
+  // shows accurate progress (not nothing) if the tab closes before it finishes,
+  // and so the table never ends up with one row per batch.
+  let herAuditRunId = null;
+  try {
+    const startResp = await fetch('/api/her/audit/run/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ticket_number: ticketNumber, env: herCurrentEnv,
+        forced_revoke: herForcedRevoke, total: ids.length,
+      }),
+    });
+    const startResult = await startResp.json();
+    if (startResult.status === 'ok') herAuditRunId = startResult.run_id;
+  } catch (e) { /* fall through — batches below fall back to per-batch logging */ }
+
+  async function updateHerAuditRun(status) {
+    if (!herAuditRunId) return;
+    try {
+      await fetch(`/api/her/audit/run/${herAuditRunId}/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          // Already-revoked notifications count toward done, not failed — the
+          // desired end state (revoked) is already true for them.
+          sent: totalSent + totalAlreadyDone, failed: totalFailed, status,
+          failed_ids: allFailed.slice(0, 50).map(f => f.notification_id),
+        }),
+      });
+    } catch (e) { /* best-effort — final update below still has the real outcome */ }
+  }
 
   for (let b = 0; b < totalBatches; b++) {
     if (herStopRequested) {
       appendLog(`[WARN]  Run terminated by user — stopped before batch ${b + 1}/${totalBatches}`);
       break;
     }
+    if (herAutoPaused) break; // message for this was already logged when the streak tripped
     const batchIds = idBatches[b];
     const payload = {
       env: herCurrentEnv,
@@ -3421,6 +3649,10 @@ async function herDispatchRun() {
       notification_ids: batchIds,
       forced_revoke: herForcedRevoke,
       threads,
+      // When we have a run-level audit row, per-batch calls don't write their
+      // own — this run's row is updated below instead. Falls back to the old
+      // one-row-per-batch behavior if /api/her/audit/run/start didn't succeed.
+      record_audit: !herAuditRunId,
     };
 
     herAbortCtrl = new AbortController();
@@ -3435,13 +3667,35 @@ async function herDispatchRun() {
 
       if (result.status === 'ok') {
         totalSent += result.sent || 0;
+        totalAlreadyDone += result.already_done || 0;
         totalFailed += result.failed || 0;
         if (result.failed > 0 && result.results?.failed) allFailed.push(...result.results.failed);
-        appendLog(`[INFO]  Batch ${b + 1}/${totalBatches} — revoked ${result.sent}/${result.total}${result.failed ? `, failed ${result.failed}` : ''}`);
+        appendLog(`[INFO]  Batch ${b + 1}/${totalBatches} — revoked ${result.sent}/${result.total}`
+          + `${result.already_done ? `, already done ${result.already_done}` : ''}`
+          + `${result.failed ? `, failed ${result.failed}` : ''}`);
+
+        // A batch that failed end-to-end (nothing sent, nothing already-done)
+        // is a candidate for the auto-pause streak; anything with at least
+        // some success resets it, since that's normal per-ID noise, not a
+        // systemic problem.
+        const batchFullyFailed = (result.sent || 0) === 0 && (result.already_done || 0) === 0
+          && (result.failed || 0) === batchIds.length && batchIds.length > 0;
+        if (batchFullyFailed) {
+          const failedList = result.results?.failed || [];
+          const sig = (failedList[0]?.detail || failedList[0]?.error || 'unknown error').slice(0, 200);
+          if (sig === herFailStreakSignature) herFailStreakCount++;
+          else { herFailStreakSignature = sig; herFailStreakCount = 1; }
+        } else {
+          herFailStreakSignature = null;
+          herFailStreakCount = 0;
+        }
       } else {
         hadError = true;
         totalFailed += batchIds.length;
         appendLog(`[ERROR]  Batch ${b + 1}/${totalBatches} failed — ${result.message || 'Unknown error'}`);
+        const sig = `HTTP error: ${result.message || 'Unknown error'}`;
+        if (sig === herFailStreakSignature) herFailStreakCount++;
+        else { herFailStreakSignature = sig; herFailStreakCount = 1; }
       }
     } catch (err) {
       if (err.name === 'AbortError') {
@@ -3451,36 +3705,88 @@ async function herDispatchRun() {
       hadError = true;
       totalFailed += batchIds.length;
       appendLog(`[ERROR]  Batch ${b + 1}/${totalBatches} failed — ${err.message}`);
+      const sig = `Network error: ${err.message}`;
+      if (sig === herFailStreakSignature) herFailStreakCount++;
+      else { herFailStreakSignature = sig; herFailStreakCount = 1; }
     }
 
     const donePct = Math.round(((b + 1) / totalBatches) * 100);
-    setProgress(donePct, `Batch ${b + 1}/${totalBatches} · ${totalSent} revoked`);
+    const doneSoFar = totalSent + totalAlreadyDone;
+    setProgress(donePct, `Batch ${b + 1}/${totalBatches} · ${doneSoFar} done`);
+    await updateHerAuditRun('RUNNING');
+
+    // Best-effort checkpoint save — lets a later run of this same file offer
+    // "resume from here" instead of the user having to remember this number.
+    if (herIdMode === 'file' && herCurrentFileSignature) {
+      const newPosition = Math.min(skipCount + (b + 1) * batchSize, herLoadedIds.length);
+      herSaveCheckpoint(newPosition, herLoadedIds.length, ticketNumber, herCurrentEnv);
+    }
+
+    if (herFailStreakCount >= AUTO_PAUSE_THRESHOLD) {
+      herAutoPaused = true;
+      appendLog(`[WARN]  Auto-pausing after batch ${b + 1}/${totalBatches} — the last ${herFailStreakCount} batches all failed`
+        + ` with the same error ("${herFailStreakSignature}"). This looks systemic (an expired token, a network issue, or the`
+        + ` API rejecting every call the same way) rather than normal per-ID failures. Fix the underlying issue, then re-run —`
+        + ` this file's position has been checkpointed, so "Resume from here" will pick up where this stopped.`);
+    }
   }
+
+  // "Done" = actually revoked this run, plus ones a call told us were already
+  // revoked — both mean the notification ends up in the state we wanted.
+  const totalDone = totalSent + totalAlreadyDone;
 
   if (allFailed.length) {
     appendLog(`[WARN]  ${allFailed.length} record(s) failed across all batches (after auto-retry):`);
-    allFailed.slice(0, 20).forEach(f => appendLog(`[ERROR]  ${f.notification_id} — ${f.error}`));
+    allFailed.slice(0, 20).forEach(f => appendLog(`[ERROR]  ${f.notification_id} — ${f.error}${f.detail ? ` — ${f.detail}` : ''}`));
     if (allFailed.length > 20) appendLog(`[INFO]  ... and ${allFailed.length - 20} more failure(s)`);
   }
 
-  bar.style.background = herStopRequested ? 'var(--danger)' : hadError && totalSent === 0 ? 'var(--danger)' : totalFailed > 0 ? 'var(--warn)' : 'var(--success)';
+  bar.style.background = herStopRequested ? 'var(--danger)' : herAutoPaused ? 'var(--warn)' : hadError && totalDone === 0 ? 'var(--danger)' : totalFailed > 0 ? 'var(--warn)' : 'var(--success)';
   appendLog(herStopRequested
-    ? `[WARN]  HER Revocation run TERMINATED by user — ${totalSent}/${ids.length} notification(s) revoked before stopping`
-    : `[SUCCESS]  HER Revocation run complete — ${totalSent}/${ids.length} notification(s) revoked across ${totalBatches} batch(es)`);
+    ? `[WARN]  HER Revocation run TERMINATED by user — ${totalDone}/${ids.length} notification(s) done before stopping`
+    : herAutoPaused
+      ? `[WARN]  HER Revocation run AUTO-PAUSED — ${totalDone}/${ids.length} notification(s) done before pausing (repeated identical failures)`
+      : `[SUCCESS]  HER Revocation run complete — ${totalDone}/${ids.length} notification(s) done across ${totalBatches} batch(es)`
+        + `${totalAlreadyDone ? ` (${totalSent} revoked now, ${totalAlreadyDone} already revoked)` : ''}`);
   statusLine.innerHTML = herStopRequested
     ? '<span style="color:var(--danger);">⏹ Terminated</span>'
-    : totalFailed === 0
-      ? '<span style="color:var(--success);">✔ Completed</span>'
-      : totalSent === 0
-        ? '<span style="color:var(--danger);">✖ Failed</span>'
-        : '<span style="color:var(--warn);">⚠ Partial</span>';
+    : herAutoPaused
+      ? '<span style="color:var(--warn);">⏸ Auto-paused</span>'
+      : totalFailed === 0
+        ? '<span style="color:var(--success);">✔ Completed</span>'
+        : totalDone === 0
+          ? '<span style="color:var(--danger);">✖ Failed</span>'
+          : '<span style="color:var(--warn);">⚠ Partial</span>';
+
+  herNotify(
+    herAutoPaused ? 'HER Revocation auto-paused' : herStopRequested ? 'HER Revocation stopped' : 'HER Revocation run finished',
+    `Ticket ${ticketNumber} · ${totalDone}/${ids.length} done, ${totalFailed} failed${herAutoPaused ? ' — paused on repeated identical errors' : ''}`
+  );
 
   // HER Revocation is intentionally NOT logged to the shared Run History —
   // it has its own dedicated audit trail (the Revocation History card below,
   // backed by /api/her/audit in S3), which is what herUpdateStats() reads
   // from for these cards instead of the shared /api/logs backend.
+
+  // Final update to this run's single Revocation History row — TERMINATED if
+  // the user stopped it, AUTO_PAUSED if the repeated-error detector tripped,
+  // otherwise the normal OK/FAILED/PARTIAL computed server-side from the totals.
+  await updateHerAuditRun(herStopRequested ? 'TERMINATED' : herAutoPaused ? 'AUTO_PAUSED' : null);
+  // The row above only keeps a 50-item preview of failed IDs. Save the
+  // COMPLETE list (however many thousand that might be) separately, so it can
+  // be downloaded later from the "Failed IDs" link on this run's row.
+  if (herAuditRunId && allFailed.length) {
+    try {
+      await fetch(`/api/her/audit/run/${herAuditRunId}/failed_ids`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ failed_ids: allFailed }),
+      });
+    } catch (e) { /* best-effort — the run's own result already succeeded/failed regardless */ }
+  }
+
   herUpdateStats();
-  herLoadAuditLog(); // pull in the server-side row(s) this run just wrote
+  herLoadAuditLog(); // pull in the one server-side row this run just wrote/updated
 
   isHerRunning = false;
   herAbortCtrl = null;
