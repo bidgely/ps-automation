@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opshub
+  labels:
+    app: opshub
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opshub
+  template:
+    metadata:
+      labels:
+        app: opshub
+    spec:
+      containers:
+        - name: opshub
+          image: opshub:latest   # replace with your pushed image, e.g. your-registry/opshub:v1
+          ports:
+            - containerPort: 8080
+          envFrom:
+            # Pulls GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, FLASK_SECRET_KEY
+            # straight in as env vars — matches os.environ.get(...) in server.py,
+            # no code changes needed.
+            - secretRef:
+                name: opshub-secrets
+          # AWS access for boto3 (SQS/S3): prefer IAM Roles for Service Accounts
+          # (IRSA on EKS) or a node/instance role over static keys. If you must
+          # use static keys instead, add a second secretRef here pointing at a
+          # Secret holding AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY.
+          # Whatever identity this runs as needs s3:GetObject + s3:PutObject on:
+          #   - bidgely-support-ps/opshub/run_log.json            (shared run history)
+          #   - bidgely-support-ps/opshub/her_revocation_audit.json (HER Revocation audit log)
+          #   - bidgely-support-ps/scripts/bc_dashboard_final_status.json (BC Schedule Tracker; read-only is enough)
+          # plus sqs:SendMessage on whichever queues Aggregation/Disaggregation/
+          # Rate Comparison dispatch to.
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
