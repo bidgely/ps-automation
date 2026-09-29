@@ -35,6 +35,17 @@ spec:
           #   - bidgely-support-ps/scripts/bc_dashboard_final_status.json (BC Schedule Tracker; read-only is enough)
           # plus sqs:SendMessage on whichever queues Aggregation/Disaggregation/
           # Rate Comparison dispatch to.
+          #
+          # CA and EU (separate AWS accounts) also need CA_ROLE_ARN / EU_ROLE_ARN
+          # env vars (add to opshub-secrets) pointing at an IAM role in each of
+          # those accounts, with a trust policy allowing THIS pod's identity to
+          # assume it — server.py then reaches them via STS, no credentials file
+          # needed. NA2 disaggregation/rate_comparison similarly wants NA_ROLE_ARN
+          # if it's meant to run under a distinct role from the default identity.
+          # Without these set, server.py falls back to looking for a named AWS
+          # CLI profile ('ca'/'EU'/'na') instead, which needs its own credentials
+          # file mounted into the pod — that's the "ProfileNotFound" error if
+          # neither path is configured.
           resources:
             requests:
               cpu: "100m"

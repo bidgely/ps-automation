@@ -17,6 +17,14 @@ this same directory (loaded automatically at startup):
                               Token" card) — that's stored in her_revocation.py's
                               .her_revoke_token.json, not here. This env var only matters
                               on a fresh install before anyone has pasted a token yet.
+    CA_ROLE_ARN, EU_ROLE_ARN, NA_ROLE_ARN - OPTIONAL, one per environment that needs
+                              cross-account AWS access (CA and EU live in separate AWS
+                              accounts; 'na' is used for NA2 disaggregation/rate_comparison).
+                              If set, this process assumes that IAM role via STS instead of
+                              needing a named AWS CLI profile — the Kubernetes-native way to
+                              reach another account with no credentials file required. See
+                              _get_boto3_session()'s comment further down for the full story,
+                              including the one-time IAM trust-policy setup this still needs.
 
 Example .env file (create as `.env` next to server.py):
     GOOGLE_CLIENT_ID=123456789-abc.apps.googleusercontent.com
@@ -421,20 +429,58 @@ BC_DASHBOARD_CACHE_TTL  = 60            # seconds — avoids hitting S3 on every
 _bc_dashboard_cache = {'data': None, 'fetched_at': 0}
 
 
+# ─── AWS CREDENTIALS PER ENVIRONMENT ────────────────────────────
+# CA and EU (and, for disaggregation/rate_comparison, the 'na' profile) live
+# in AWS accounts separate from this process's own default identity, so they
+# need their own credentials — this used to mean a named AWS CLI profile
+# ('ca' / 'EU' / 'na'), which requires a ~/.aws/config or ~/.aws/credentials
+# file with a matching [profile ...] section to exist wherever this runs.
+# That's awkward in Kubernetes: there's no such file by default, only
+# whatever IAM role the pod itself has (via IRSA or a node role) — which is
+# exactly the "ProfileNotFound: The config profile (ca) could not be found"
+# error this was hitting.
+#
+# _get_boto3_session now tries TWO ways, in order, for any of these
+# environments:
+#   1. A <PROFILE>_ROLE_ARN env var (e.g. CA_ROLE_ARN, EU_ROLE_ARN,
+#      NA_ROLE_ARN) — if set, this process assumes that IAM role via STS
+#      using whatever credentials it already has (its own pod identity).
+#      This is the Kubernetes-native path: no credentials file anywhere,
+#      just one role ARN per environment as a Secret. The target role's
+#      trust policy needs to allow this process's own IAM identity to
+#      assume it — that's a one-time setup in AWS IAM, not something this
+#      code can create for you.
+#   2. A named AWS CLI profile (the original behavior) — kept as a fallback
+#      for local dev, or anywhere that still manages credentials that way.
+# If neither is configured, this raises the same ProfileNotFound error as
+# before — an honest failure rather than a silent wrong-account fallback.
+def _get_boto3_session(profile, region):
+    if not profile:
+        return boto3.Session(region_name=region)
+
+    role_arn = os.environ.get(f'{profile.upper()}_ROLE_ARN')
+    if role_arn:
+        sts = boto3.client('sts')
+        resp = sts.assume_role(RoleArn=role_arn, RoleSessionName='opshub')
+        creds = resp['Credentials']
+        return boto3.Session(
+            aws_access_key_id=creds['AccessKeyId'],
+            aws_secret_access_key=creds['SecretAccessKey'],
+            aws_session_token=creds['SessionToken'],
+            region_name=region,
+        )
+
+    return boto3.Session(profile_name=profile, region_name=region)
+
+
 def get_s3_client():
-    if BC_DASHBOARD_S3_PROFILE:
-        session = boto3.Session(profile_name=BC_DASHBOARD_S3_PROFILE, region_name=BC_DASHBOARD_S3_REGION)
-    else:
-        session = boto3.Session(region_name=BC_DASHBOARD_S3_REGION)
+    session = _get_boto3_session(BC_DASHBOARD_S3_PROFILE, BC_DASHBOARD_S3_REGION)
     return session.client('s3')
 
 
 def get_sqs_client(script_type, env):
     cfg = ENV_CONFIG[script_type][env]
-    if cfg['profile']:
-        session = boto3.Session(profile_name=cfg['profile'], region_name=cfg['region'])
-    else:
-        session = boto3.Session(region_name=cfg['region'])
+    session = _get_boto3_session(cfg['profile'], cfg['region'])
     return session.client('sqs')
 
 
@@ -838,6 +884,27 @@ if __name__ == '__main__':
     if not get_token_status()['set']:
         print('  ⚠ No HER revoke token set — HER Revocation tab will fail until an admin')
         print('    pastes today\'s token there, or HER_REVOKE_ACCESS_TOKEN is set as a fallback.\n')
+
+    # Surface CA/EU/na credential setup at startup rather than waiting for someone
+    # to hit Dispatch and get a ProfileNotFound error — every named profile this
+    # app actually uses, across every env config, gets checked here.
+    all_profiles = sorted({
+        cfg['profile']
+        for service in ENV_CONFIG.values()
+        for cfg in service.values()
+        if cfg.get('profile')
+    })
+    if all_profiles:
+        print('  AWS credentials per environment:')
+        for p in all_profiles:
+            role_arn = os.environ.get(f'{p.upper()}_ROLE_ARN')
+            if role_arn:
+                print(f'    {p}: via STS role assumption ({role_arn})')
+            else:
+                print(f'    {p}: ⚠ no {p.upper()}_ROLE_ARN set — falling back to a named AWS CLI profile')
+                print(f'       called "{p}", which needs a ~/.aws/config or ~/.aws/credentials')
+                print(f'       file with that profile to exist wherever this process runs.')
+        print()
     print('\n  PS Internal Ops Dashboard')
     print('  http://localhost:8080\n')
     app.run(host='0.0.0.0', port=8080, debug=False)
