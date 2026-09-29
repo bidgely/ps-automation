@@ -515,6 +515,9 @@
   <div class="nav-tab" data-tab="ratecomp" onclick="switchTab('ratecomp')">
     <span class="tab-icon">⇄</span> Rate Comparison Re-Run
   </div>
+  <div class="nav-tab" data-tab="herrevoke" onclick="switchTab('herrevoke')">
+    <span class="tab-icon">✕</span> HER Revocation
+  </div>
   <div class="nav-tab" data-tab="bctracker" onclick="switchTab('bctracker')">
     <span class="tab-icon">◉</span> BC Schedule Tracker
   </div>
@@ -1173,6 +1176,217 @@
     </div>
   </div>
 
+  <!-- ═══════════════════════ HER REVOCATION TAB ═══════════════════════ -->
+  <div class="page" id="page-herrevoke">
+    <div class="page-header">
+      <div class="page-title">HER Revocation</div>
+      <div class="page-sub">Revoke one or many HER notifications — calls the notifications-revoke API directly</div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <div class="card-title" style="margin-bottom:0;">Revoke Access Token</div>
+        <span id="her-token-status" style="font-size:11.5px;font-family:var(--mono);color:var(--muted);">Checking...</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <input class="form-input" type="password" id="her-token-input" placeholder="Paste today's revoke token" style="flex:1;min-width:220px;font-family:var(--mono);font-size:12px;" onkeydown="if(event.key==='Enter')herSaveToken()">
+        <button class="btn btn-outline btn-sm" onclick="herSaveToken()">Save Token</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px;">This token is shared across the team and regenerated fresh every day — whoever gets the new one pastes it here once. It's write-only: nobody, including this page on reload, can read it back out once saved.</div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;border-color:rgba(245,166,35,0.3);">
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:220px;">
+          <label class="form-label">Ticket Number <span style="color:var(--danger);">*</span></label>
+          <input class="form-input" type="text" id="her-param-ticket" placeholder="e.g. INTPS-1234" required onchange="herUpdatePreview()" style="font-family:var(--mono);font-size:13px;">
+        </div>
+        <div style="font-size:11px;color:var(--muted);max-width:320px;padding-top:18px;">Required for every run — saved with this dispatch in the admin records</div>
+      </div>
+    </div>
+
+    <div class="grid-3" style="margin-bottom:20px;">
+      <div class="stat-card">
+        <div class="stat-label">Last Run</div>
+        <div class="stat-val" id="her-stat-lastrun">—</div>
+        <div class="stat-sub">No recent executions</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Runs</div>
+        <div class="stat-val" id="her-stat-runs">0</div>
+        <div class="stat-sub">Notifications revoked</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Last Status</div>
+        <div class="stat-val" id="her-stat-status" style="font-size:16px;padding-top:6px;">—</div>
+        <div class="stat-sub" id="her-stat-status-sub">Awaiting execution</div>
+      </div>
+    </div>
+
+    <div style="padding:10px 14px;background:rgba(255,90,90,0.06);border:1px solid rgba(255,90,90,0.2);border-radius:8px;font-size:12px;color:var(--danger);font-family:var(--mono);margin-bottom:20px;line-height:1.7;">
+      ⚠ Revocation cannot be undone. Double-check the ticket and the ID list before dispatching, especially for a file upload.
+    </div>
+
+    <div class="grid-2" style="align-items:start;">
+
+      <!-- LEFT: CONFIG -->
+      <div>
+        <div class="card">
+          <div class="card-title">Environment</div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Environment</label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;" id="her-env-selector">
+              <div class="env-btn active" data-env="NA2" onclick="herSelectEnv(this,'NA2')">
+                <div style="font-size:13px;font-weight:500;">NA2</div>
+                <div style="font-size:10px;color:var(--muted);font-family:var(--mono);">naapi2-external.bidgely.com</div>
+              </div>
+              <div class="env-btn" data-env="NA" onclick="herSelectEnv(this,'NA')">
+                <div style="font-size:13px;font-weight:500;">NA</div>
+                <div style="font-size:10px;color:var(--muted);font-family:var(--mono);">naapi.bidgely.com</div>
+              </div>
+              <div class="env-btn" data-env="CA" onclick="herSelectEnv(this,'CA')">
+                <div style="font-size:13px;font-weight:500;">CA</div>
+                <div style="font-size:10px;color:var(--muted);font-family:var(--mono);">caapi.bidgely.com</div>
+              </div>
+              <div class="env-btn" data-env="EU" onclick="herSelectEnv(this,'EU')">
+                <div style="font-size:13px;font-weight:500;">EU</div>
+                <div style="font-size:10px;color:var(--muted);font-family:var(--mono);">euapi.bidgely.com</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Revoke Parameters</div>
+          <div class="form-group" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0;">
+            <span>
+              <span class="form-label" style="margin-bottom:2px;">Forced Revoke</span>
+              <div style="font-size:11px;color:var(--muted);">Adds <code style="font-family:var(--mono);font-size:11px;color:var(--accent2);">forcedRevoke=true</code> to the call</div>
+            </span>
+            <div class="toggle-switch on" id="her-forced-toggle" onclick="herToggleForced()">
+              <div class="toggle-knob"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- EXECUTION PARAMS -->
+        <div class="card">
+          <div class="card-title">Execution Parameters</div>
+
+          <div class="form-group">
+            <label class="form-label">Threads</label>
+            <input class="form-input" type="number" id="her-param-threads" value="2" min="1" max="20" onchange="herUpdatePreview()" style="width:120px;">
+            <div style="font-size:11px;color:var(--muted);margin-top:4px;">Each failed call auto-retries once before being recorded as failed.</div>
+          </div>
+
+          <!-- NOTIFICATION ID INPUT MODE -->
+          <div style="margin-top:18px;">
+            <label class="form-label">Notification ID Input Mode</label>
+            <div style="display:flex;gap:8px;margin-bottom:12px;">
+              <div class="mode-pill active" id="her-mode-single" onclick="herSetIdMode('single')">Single Notification ID</div>
+              <div class="mode-pill" id="her-mode-file" onclick="herSetIdMode('file')">File Upload</div>
+            </div>
+
+            <div id="her-id-single-section">
+              <input class="form-input" type="text" id="her-param-id-single" placeholder="e.g. 92c293d0-1e01-11ee-b153-8b46ec8d5a3e" onchange="herUpdatePreview()" style="font-family:var(--mono);font-size:12px;">
+            </div>
+
+            <div id="her-id-file-section" style="display:none;">
+              <div style="display:flex;gap:8px;align-items:center;">
+                <input class="form-input" type="text" id="her-param-filename" placeholder="notification_ids.csv" style="flex:1;font-family:var(--mono);font-size:12px;" onchange="herUpdatePreview()">
+                <button class="btn btn-outline btn-sm" onclick="document.getElementById('her-file-input').click()">Browse</button>
+                <input type="file" id="her-file-input" accept=".csv,.txt" style="display:none" onchange="herHandleFile(event)">
+              </div>
+              <div id="her-id-file-preview" style="display:none;margin-top:8px;padding:8px 12px;background:#080a0f;border:1px solid var(--border);border-radius:6px;font-family:var(--mono);font-size:11px;color:var(--muted);max-height:80px;overflow-y:auto;"></div>
+              <div class="form-group" style="margin-top:12px;margin-bottom:0;max-width:160px;">
+                <label class="form-label">Batch Size</label>
+                <input class="form-input" type="number" id="her-param-batchsize" value="500" min="1" max="5000" onchange="herUpdatePreview()">
+                <div style="font-size:11px;color:var(--muted);margin-top:4px;">Sent to the backend in batches of this size — keeps large files from timing out and shows per-batch progress below</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: PREVIEW + RUN -->
+      <div>
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <div class="card-title" style="margin-bottom:0;">API Call Preview</div>
+            <button class="btn btn-outline btn-sm" onclick="herCopyCommand()">⎘ Copy</button>
+          </div>
+          <div style="background:#080a0f;border:1px solid var(--border);border-radius:8px;padding:14px 16px;font-family:var(--mono);font-size:11px;line-height:1.9;color:var(--accent2);word-break:break-all;" id="her-cmd-preview">—</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:8px;">Token is never shown here or in the results below — the server holds today's shared token.</div>
+        </div>
+
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary" id="her-dispatch-btn" style="flex:1;justify-content:center;padding:12px;font-size:14px;background:var(--danger);border-color:var(--danger);" onclick="herDispatchRun()">
+            ✕ &nbsp;Revoke Notification(s)
+          </button>
+          <button class="btn btn-outline" id="her-stop-btn" style="display:none;justify-content:center;padding:12px 18px;font-size:14px;border-color:var(--danger);color:var(--danger);" onclick="stopHerDispatch()">
+            ■ &nbsp;Stop
+          </button>
+        </div>
+
+        <div class="card" id="her-run-card" style="display:none;margin-top:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <div class="card-title" style="margin-bottom:0;" id="her-run-title">REVOKING</div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);" id="her-run-status-line">
+              <div class="spinner"></div> Running...
+            </div>
+          </div>
+          <div style="margin-bottom:10px;">
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:5px;">
+              <span id="her-run-progress-label">Initializing...</span>
+              <span id="her-run-progress-pct">0%</span>
+            </div>
+            <div class="progress-wrap"><div class="progress-bar" id="her-run-progress-bar" style="width:0%;background:var(--danger)"></div></div>
+          </div>
+          <div class="terminal" id="her-run-log"></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="height:16px;"></div>
+
+    <div class="card" style="padding:0;overflow:hidden;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:18px 18px 0;">
+        <div class="card-title" style="margin-bottom:0;">Revocation History</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input class="form-input" type="text" id="her-audit-filter-ticket" placeholder="Filter by ticket..." style="font-family:var(--mono);font-size:12px;width:160px;" oninput="herLoadAuditLog()">
+          <select class="form-select" id="her-audit-filter-env" style="width:110px;font-size:12px;" onchange="herLoadAuditLog()">
+            <option value="">All envs</option>
+            <option value="NA2">NA2</option>
+            <option value="NA">NA</option>
+            <option value="CA">CA</option>
+            <option value="EU">EU</option>
+          </select>
+          <button class="btn btn-outline btn-sm" onclick="herLoadAuditLog()">⟳ Refresh</button>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);padding:8px 18px 14px;">Every revocation — from this tab or the CLI — lands here, whoever ran it. This is the source of truth for "who revoked what, on which ticket," not the browser-local Admin Run Reports history.</div>
+      <div style="overflow-x:auto;">
+        <table class="run-table" id="her-audit-table">
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Ticket #</th>
+              <th>By</th>
+              <th>Environment</th>
+              <th>Total</th>
+              <th>Revoked</th>
+              <th>Failed</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="her-audit-tbody">
+            <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <!-- ═══════════════════════ BC SCHEDULE TRACKER TAB ═══════════════════════ -->
   <div class="page" id="page-bctracker">
     <div class="page-header">
@@ -1526,9 +1740,10 @@
 // Role permissions matrix — must mirror ROLE_CONFIG-equivalent checks on the backend
 // (see check_dispatch_permission in server.py) since this side only controls the UI,
 // not actual access to the dispatch/data routes.
+// 'herrevoke' is admin + PS (user role) — not delivery.
 const ROLE_CONFIG = {
-  admin:    { tabs: ['rerun','disagg','ratecomp','bctracker','bc','runbook','admin'], queueFilter: null },
-  user:     { tabs: ['rerun','disagg','ratecomp','bctracker','bc','runbook','admin'], queueFilter: null },
+  admin:    { tabs: ['rerun','disagg','ratecomp','herrevoke','bctracker','bc','runbook','admin'], queueFilter: null },
+  user:     { tabs: ['rerun','disagg','ratecomp','herrevoke','bctracker','bc','runbook','admin'], queueFilter: null },
   delivery: { tabs: ['rerun'],                                            queueFilter: 'priority' },
 };
 
@@ -1798,6 +2013,7 @@ function switchTab(tab) {
   document.getElementById(`page-${tab}`).classList.add('active');
   if (tab === 'admin') { fetchRunLog().then(() => { updateAdminStats(); renderAdminTable(); }); }
   if (tab === 'bctracker' && !bctData) loadBcTracker();
+  if (tab === 'herrevoke') { herLoadTokenStatus(); herLoadAuditLog(); }
 }
 
 // ─── SHARED BATCH HELPER ───────────────────────────────────────
@@ -2316,6 +2532,8 @@ window.addEventListener('DOMContentLoaded', () => {
   rcPopulateQueues();
   rcSetUuidMode('single');
   rcUpdatePreview();
+  herSetIdMode('single');
+  herUpdatePreview();
   updateAdminStats();
   checkSession();
 });
@@ -2907,6 +3125,325 @@ async function rcDispatchRun() {
   unlockBtn();
 }
 
+// ─── HER REVOCATION CONFIGURATOR ────────────────────────────────
+// The token itself lives server-side (set via the Revoke Access Token card
+// above, persisted to disk) — this tab never handles the token directly.
+const HER_ENV_CONFIG = {
+  NA2: { host: 'naapi2-external.bidgely.com' },
+  NA:  { host: 'naapi.bidgely.com' },
+  CA:  { host: 'caapi.bidgely.com' },
+  EU:  { host: 'euapi.bidgely.com' },
+};
+
+let herCurrentEnv = 'NA2';
+let herForcedRevoke = true;
+let herIdMode = 'single';   // 'single' | 'file'
+let herLoadedIds = [];      // parsed from uploaded file
+
+// ── Revoke access token (admin-managed, write-only) ─────────────
+function herFormatTokenStatus(data) {
+  if (!data || data.status !== 'ok') return '<span style="color:var(--danger);">● Could not check</span>';
+  if (!data.set) return '<span style="color:var(--danger);">● No token set</span> — revoking will fail until one is saved';
+  if (data.source === 'env') return '<span style="color:var(--warn);">● Set via server env var</span> (no UI history for this one)';
+  const when = data.updated_at ? new Date(data.updated_at * 1000).toLocaleString('en-GB') : 'unknown time';
+  return `<span style="color:var(--success);">● Token set</span> — by ${data.updated_by || 'unknown'} at ${when}`;
+}
+
+async function herLoadTokenStatus() {
+  const el = document.getElementById('her-token-status');
+  if (!el) return;
+  try {
+    const resp = await fetch('/api/her/token-status', { credentials: 'same-origin' });
+    const data = await resp.json();
+    el.innerHTML = herFormatTokenStatus(resp.ok ? data : null);
+  } catch (err) {
+    el.innerHTML = '<span style="color:var(--danger);">● Could not check</span>';
+  }
+}
+
+// ─── Revocation History (server-side audit log — see her_revocation.py) ────
+// Deliberately NOT the client-side RUN_LOG/localStorage table: that only ever
+// shows runs made from the browser you're currently sitting at. This reads
+// from the server so every admin sees every revocation, including ones run
+// from the CLI directly.
+function herAuditStatusBadge(status) {
+  if (status === 'OK')      return '<span style="color:var(--success);">✔ OK</span>';
+  if (status === 'FAILED')  return '<span style="color:var(--danger);">✖ Failed</span>';
+  return '<span style="color:var(--warn);">⚠ Partial</span>';
+}
+
+async function herLoadAuditLog() {
+  const tbody = document.getElementById('her-audit-tbody');
+  if (!tbody) return;
+  const ticket = document.getElementById('her-audit-filter-ticket')?.value.trim() || '';
+  const env = document.getElementById('her-audit-filter-env')?.value || '';
+  const params = new URLSearchParams();
+  if (ticket) params.set('ticket', ticket);
+  if (env) params.set('env', env);
+  params.set('limit', '200');
+
+  try {
+    const resp = await fetch(`/api/her/audit?${params}`, { credentials: 'same-origin' });
+    const data = await resp.json();
+    if (!resp.ok || data.status !== 'ok') {
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--danger);padding:32px;">${data.message || 'Could not load the audit log.'}</td></tr>`;
+      return;
+    }
+    const entries = data.entries || [];
+    if (!entries.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">No revocations recorded yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = entries.map(e => `
+      <tr>
+        <td style="font-family:var(--mono);font-size:11.5px;">${new Date(e.timestamp).toLocaleString()}</td>
+        <td style="font-family:var(--mono);">${e.ticket}</td>
+        <td>${e.actor}</td>
+        <td><span class="badge badge-blue">${e.env}</span></td>
+        <td>${e.total}</td>
+        <td>${e.sent}</td>
+        <td>${e.failed}</td>
+        <td>${herAuditStatusBadge(e.status)}</td>
+      </tr>
+    `).join('');
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--danger);padding:32px;">Could not load the audit log: ${err.message}</td></tr>`;
+  }
+}
+
+async function herSaveToken() {
+  const input = document.getElementById('her-token-input');
+  const token = input.value.trim();
+  if (!token) { alert('Paste a token first.'); return; }
+  try {
+    const resp = await fetch('/api/her/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ token }),
+    });
+    const data = await resp.json();
+    if (resp.ok && data.status === 'ok') {
+      input.value = '';
+      herLoadTokenStatus();
+    } else {
+      alert('Failed to save token: ' + (data.message || `HTTP ${resp.status}`));
+    }
+  } catch (err) {
+    alert('Failed to save token: ' + err.message);
+  }
+}
+
+function herSelectEnv(el, env) {
+  document.querySelectorAll('#her-env-selector .env-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  herCurrentEnv = env;
+  herUpdatePreview();
+}
+
+function herSetIdMode(mode) {
+  herIdMode = mode;
+  document.getElementById('her-mode-single').classList.toggle('active', mode === 'single');
+  document.getElementById('her-mode-file').classList.toggle('active', mode === 'file');
+  document.getElementById('her-id-single-section').style.display = mode === 'single' ? 'block' : 'none';
+  document.getElementById('her-id-file-section').style.display = mode === 'file' ? 'block' : 'none';
+  herUpdatePreview();
+}
+
+function herToggleForced() {
+  herForcedRevoke = !herForcedRevoke;
+  document.getElementById('her-forced-toggle').classList.toggle('on', herForcedRevoke);
+  herUpdatePreview();
+}
+
+function herHandleFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  document.getElementById('her-param-filename').value = file.name;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const lines = ev.target.result.split('\n').map(l => l.trim()).filter(Boolean);
+    herLoadedIds = [...new Set(lines)]; // de-dupe, same as the old script's pandas unique()
+    const preview = document.getElementById('her-id-file-preview');
+    preview.style.display = 'block';
+    const shown = herLoadedIds.slice(0, 5);
+    preview.innerHTML = shown.map(l => `<div>${l}</div>`).join('') +
+      (herLoadedIds.length > 5 ? `<div style="color:var(--accent);margin-top:2px;">... and ${herLoadedIds.length - 5} more (${herLoadedIds.length} total)</div>` : `<div style="color:var(--accent);margin-top:2px;">${herLoadedIds.length} record(s) loaded</div>`);
+    herUpdatePreview();
+  };
+  reader.readAsText(file);
+}
+
+function herUpdatePreview() {
+  const host = HER_ENV_CONFIG[herCurrentEnv].host;
+  const dispatchBtn = document.getElementById('her-dispatch-btn');
+  const el = document.getElementById('her-cmd-preview');
+
+  if (dispatchBtn) { dispatchBtn.disabled = false; dispatchBtn.style.opacity = '1'; dispatchBtn.style.cursor = 'pointer'; }
+
+  const idForPreview = herIdMode === 'single'
+    ? (document.getElementById('her-param-id-single')?.value.trim() || '{notification_id}')
+    : (herLoadedIds[0] || '{notification_id}');
+  const url = `http://${host}/2.1/notifications-revoke/notifications/${idForPreview}?forcedRevoke=${herForcedRevoke}&retry=false&access_token=***`;
+  const lines = [
+    `POST ${url}`,
+    ``,
+    herIdMode === 'single' ? `# single notification, 1 call` : `# ${herLoadedIds.length} notification(s), batched ${document.getElementById('her-param-batchsize')?.value || 500} at a time`,
+    `# threads: ${document.getElementById('her-param-threads')?.value || 2}  ·  auto-retry once on failure`,
+  ];
+  if (el) el.textContent = lines.join('\n');
+}
+
+function herCopyCommand() {
+  const text = document.getElementById('her-cmd-preview').textContent;
+  navigator.clipboard.writeText(text);
+}
+
+async function herDispatchRun() {
+  if (isHerRunning) { alert('A HER Revocation run is already in progress on this tab. Please wait for it to finish.'); return; }
+
+  const ticketNumber = document.getElementById('her-param-ticket').value.trim();
+  if (!ticketNumber) { alert('Please enter a ticket number before dispatching.'); document.getElementById('her-param-ticket').focus(); return; }
+
+  let ids = [];
+  if (herIdMode === 'single') {
+    const id = document.getElementById('her-param-id-single').value.trim();
+    if (!id) { alert('Please enter a notification ID before dispatching.'); return; }
+    ids = [id];
+  } else {
+    if (!herLoadedIds.length) { alert('Please upload a file with notification IDs before dispatching.'); return; }
+    ids = herLoadedIds;
+  }
+
+  if (!confirm(`Revoke ${ids.length} notification(s)? This cannot be undone.`)) return;
+
+  isHerRunning = true;
+  herStopRequested = false;
+  const unlockBtn = lockDispatchButton('her-dispatch-btn', 'her-stop-btn');
+
+  const threads = parseInt(document.getElementById('her-param-threads').value) || 2;
+  const batchSize = herIdMode === 'file' ? (parseInt(document.getElementById('her-param-batchsize').value) || 500) : ids.length;
+
+  const card = document.getElementById('her-run-card');
+  const logEl = document.getElementById('her-run-log');
+  const bar = document.getElementById('her-run-progress-bar');
+  const pct = document.getElementById('her-run-progress-pct');
+  const lbl = document.getElementById('her-run-progress-label');
+  const statusLine = document.getElementById('her-run-status-line');
+  const title = document.getElementById('her-run-title');
+
+  card.style.display = 'block';
+  title.textContent = `REVOKING · ${herCurrentEnv}`;
+  logEl.innerHTML = '';
+  bar.style.width = '0%';
+  bar.style.background = 'var(--danger)';
+  statusLine.innerHTML = '<div class="spinner"></div> Running...';
+  pct.textContent = '0%';
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  function appendLog(line) {
+    const cls = line.startsWith('[WARN]') ? 't-warn' : line.startsWith('[ERROR]') ? 't-err' : line.startsWith('[SUCCESS]') ? '' : 't-muted';
+    logEl.innerHTML += `<div class="${cls}">${line}</div>`;
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function setProgress(p, label) {
+    bar.style.width = p + '%'; pct.textContent = p + '%'; lbl.textContent = label;
+  }
+
+  const idBatches = chunkArray(ids, batchSize);
+  const totalBatches = idBatches.length;
+
+  appendLog(`[INFO]  Ticket: ${ticketNumber}`);
+  appendLog(`[INFO]  Environment: ${herCurrentEnv}`);
+  appendLog(`[INFO]  Mode: ${herIdMode === 'single' ? `single ID — ${ids[0]}` : `file — ${ids.length} record(s)`}`);
+  appendLog(`[INFO]  forcedRevoke: ${herForcedRevoke}`);
+  appendLog(`[INFO]  Batching: ${ids.length} record(s) into ${totalBatches} batch(es) of up to ${batchSize}, ${threads} thread(s) each`);
+  setProgress(0, `Batch 0/${totalBatches}...`);
+
+  let totalSent = 0, totalFailed = 0;
+  const allFailed = [];
+  let hadError = false;
+
+  for (let b = 0; b < totalBatches; b++) {
+    if (herStopRequested) {
+      appendLog(`[WARN]  Run terminated by user — stopped before batch ${b + 1}/${totalBatches}`);
+      break;
+    }
+    const batchIds = idBatches[b];
+    const payload = {
+      env: herCurrentEnv,
+      ticket_number: ticketNumber,
+      notification_ids: batchIds,
+      forced_revoke: herForcedRevoke,
+      threads,
+    };
+
+    herAbortCtrl = new AbortController();
+    try {
+      const resp = await fetch('/dispatch/her_revocation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: herAbortCtrl.signal,
+      });
+      const result = await resp.json();
+
+      if (result.status === 'ok') {
+        totalSent += result.sent || 0;
+        totalFailed += result.failed || 0;
+        if (result.failed > 0 && result.results?.failed) allFailed.push(...result.results.failed);
+        appendLog(`[INFO]  Batch ${b + 1}/${totalBatches} — revoked ${result.sent}/${result.total}${result.failed ? `, failed ${result.failed}` : ''}`);
+      } else {
+        hadError = true;
+        totalFailed += batchIds.length;
+        appendLog(`[ERROR]  Batch ${b + 1}/${totalBatches} failed — ${result.message || 'Unknown error'}`);
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        appendLog(`[WARN]  Batch ${b + 1}/${totalBatches} aborted — run terminated by user`);
+        break;
+      }
+      hadError = true;
+      totalFailed += batchIds.length;
+      appendLog(`[ERROR]  Batch ${b + 1}/${totalBatches} failed — ${err.message}`);
+    }
+
+    const donePct = Math.round(((b + 1) / totalBatches) * 100);
+    setProgress(donePct, `Batch ${b + 1}/${totalBatches} · ${totalSent} revoked`);
+  }
+
+  if (allFailed.length) {
+    appendLog(`[WARN]  ${allFailed.length} record(s) failed across all batches (after auto-retry):`);
+    allFailed.slice(0, 20).forEach(f => appendLog(`[ERROR]  ${f.notification_id} — ${f.error}`));
+    if (allFailed.length > 20) appendLog(`[INFO]  ... and ${allFailed.length - 20} more failure(s)`);
+  }
+
+  bar.style.background = herStopRequested ? 'var(--danger)' : hadError && totalSent === 0 ? 'var(--danger)' : totalFailed > 0 ? 'var(--warn)' : 'var(--success)';
+  appendLog(herStopRequested
+    ? `[WARN]  HER Revocation run TERMINATED by user — ${totalSent}/${ids.length} notification(s) revoked before stopping`
+    : `[SUCCESS]  HER Revocation run complete — ${totalSent}/${ids.length} notification(s) revoked across ${totalBatches} batch(es)`);
+  statusLine.innerHTML = herStopRequested
+    ? '<span style="color:var(--danger);">⏹ Terminated</span>'
+    : totalFailed === 0
+      ? '<span style="color:var(--success);">✔ Completed</span>'
+      : totalSent === 0
+        ? '<span style="color:var(--danger);">✖ Failed</span>'
+        : '<span style="color:var(--warn);">⚠ Partial</span>';
+
+  await logRun({
+    type: 'HER Revocation', ticket: ticketNumber, env: herCurrentEnv,
+    queue: '—', measurement: '—',
+    entries: ids.length, sent: totalSent, failed: totalFailed,
+    terminated: herStopRequested,
+  });
+  refreshTabStats('HER Revocation', { lastrun: 'her-stat-lastrun', runs: 'her-stat-runs', status: 'her-stat-status', statusSub: 'her-stat-status-sub' });
+  herLoadAuditLog(); // pull in the server-side row(s) this run just wrote
+
+  isHerRunning = false;
+  herAbortCtrl = null;
+  unlockBtn();
+}
+
 // ─── BC SCHEDULE VALIDATION ─────────────────────────────────────
 let bcLoadedFile = null;
 let bcIssuesData = [];
@@ -2943,6 +3480,24 @@ function addDay(dateStr) {
   return d.toISOString().slice(0, 10);
 }
 
+// Accepts either ISO (YYYY-MM-DD, e.g. "2024-01-29") or US-style slash dates
+// (M/D/YYYY or MM/DD/YYYY, e.g. "1/29/2024") and normalizes to ISO — every
+// other date function in this file (addDay/subDay/daysBetween, and the sort/
+// comparison logic in runValidation) assumes ISO strings, so this is the one
+// place format differences need to be resolved. Returns null if the string
+// doesn't match either shape.
+function normalizeDate(str) {
+  str = (str || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  const us = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (us) {
+    const month = us[1].padStart(2, '0');
+    const day   = us[2].padStart(2, '0');
+    return `${us[3]}-${month}-${day}`;
+  }
+  return null;
+}
+
 function subDay(dateStr) {
   const d = new Date(dateStr + 'T00:00:00Z');
   d.setUTCDate(d.getUTCDate() - 1);
@@ -2970,13 +3525,15 @@ function parseRecords(text) {
   for (const line of lines) {
     const parts = line.split(delim).map(p => p.trim());
     if (parts.length < 3) continue;
-    // Skip header row — detect by checking if second column looks like a date
-    if (!headerSkipped && !/^\d{4}-\d{2}-\d{2}$/.test(parts[1])) {
+    const start = normalizeDate(parts[1]);
+    const end   = normalizeDate(parts[2]);
+    // Skip header row — detect by checking if second column doesn't parse as a date at all
+    if (!headerSkipped && start === null) {
       headerSkipped = true;
       continue;
     }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(parts[1]) || !/^\d{4}-\d{2}-\d{2}$/.test(parts[2])) continue;
-    records.push({ bc: parts[0], start: parts[1], end: parts[2] });
+    if (start === null || end === null) continue;
+    records.push({ bc: parts[0], start, end });
   }
   return records;
 }
