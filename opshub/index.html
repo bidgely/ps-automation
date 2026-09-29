@@ -2030,11 +2030,13 @@ function chunkArray(arr, size) {
 let isAggRunning = false;
 let isDisaggRunning = false;
 let isRcRunning = false;
+let isHerRunning = false;
 
 // Per-tab stop/terminate state — checked between batches, and used to abort an in-flight fetch.
 let aggStopRequested = false, aggAbortCtrl = null;
 let disaggStopRequested = false, disaggAbortCtrl = null;
 let rcStopRequested = false, rcAbortCtrl = null;
+let herStopRequested = false, herAbortCtrl = null;
 
 function lockDispatchButton(btnId, stopBtnId) {
   const btn = document.getElementById(btnId);
@@ -2079,6 +2081,14 @@ function stopRcDispatch() {
   rcStopRequested = true;
   if (rcAbortCtrl) rcAbortCtrl.abort();
   const stopBtn = document.getElementById('rc-stop-btn');
+  stopBtn.disabled = true;
+  stopBtn.innerHTML = '■ &nbsp;Stopping...';
+}
+function stopHerDispatch() {
+  if (!isHerRunning) return;
+  herStopRequested = true;
+  if (herAbortCtrl) herAbortCtrl.abort();
+  const stopBtn = document.getElementById('her-stop-btn');
   stopBtn.disabled = true;
   stopBtn.innerHTML = '■ &nbsp;Stopping...';
 }
