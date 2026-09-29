@@ -1393,13 +1393,14 @@
               <th>Environment</th>
               <th>Total</th>
               <th>Revoked</th>
+              <th>Already Revoked</th>
               <th>Failed</th>
               <th>Status</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="her-audit-tbody">
-            <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:32px;">Loading...</td></tr>
+            <tr><td colspan="10" style="text-align:center;color:var(--muted);padding:32px;">Loading...</td></tr>
           </tbody>
         </table>
       </div>
@@ -3219,6 +3220,28 @@ function herEscapeAttr(s) {
   return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// Two batches can fail for the exact same underlying reason yet get body
+// text that's never equal, because naapi2 embeds a fresh random requestId/
+// errorId in every response body, e.g.
+//   {"error":{"code":"5006","message":"...error ID: 244cb441-...","errorId":"244cb441-..."}}
+// Comparing raw `detail` text (as the auto-pause streak used to) therefore
+// never matches twice even when every batch is failing the identical way —
+// which is why auto-pause could fail to trip on a real systemic failure.
+// Compare on the HTTP status + parsed error code instead, falling back to
+// the raw text with UUID-looking substrings stripped when the body isn't
+// that known JSON shape.
+const HER_UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+function herFailureSignature(entry) {
+  const status = entry && entry.error != null ? String(entry.error) : 'unknown';
+  const raw = (entry && entry.detail) || '';
+  try {
+    const parsed = JSON.parse(raw);
+    const code = parsed && parsed.error && parsed.error.code;
+    if (code) return `${status}:code=${code}`;
+  } catch (e) { /* not JSON — fall through to text matching */ }
+  return `${status}:${raw.replace(HER_UUID_RE, '<id>').slice(0, 200)}`;
+}
+
 function herAuditStatusBadge(status) {
   if (status === 'OK')          return '<span style="color:var(--success);">✔ OK</span>';
   if (status === 'FAILED')      return '<span style="color:var(--danger);">✖ Failed</span>';
@@ -3251,7 +3274,8 @@ async function herUpdateStats() {
 
     document.getElementById('her-stat-lastrun').textContent = new Date(last.timestamp).toLocaleString('en-GB');
     document.getElementById('her-stat-status').innerHTML = herAuditStatusBadge(last.status);
-    document.getElementById('her-stat-status-sub').textContent = `${last.env} · ${last.sent} revoked`;
+    document.getElementById('her-stat-status-sub').textContent = `${last.env} · ${last.sent} revoked`
+      + `${last.already_done ? ` (+${last.already_done} already revoked)` : ''}`;
   } catch (err) {
     // leave whatever was already showing rather than blanking it on a transient network error
   }
@@ -3271,12 +3295,12 @@ async function herLoadAuditLog() {
     const resp = await fetch(`/api/her/audit?${params}`, { credentials: 'same-origin' });
     const data = await resp.json();
     if (!resp.ok || data.status !== 'ok') {
-      tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--danger);padding:32px;">${data.message || 'Could not load the audit log.'}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:var(--danger);padding:32px;">${data.message || 'Could not load the audit log.'}</td></tr>`;
       return;
     }
     const entries = data.entries || [];
     if (!entries.length) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:32px;">No revocations recorded yet.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:32px;">No revocations recorded yet.</td></tr>';
       return;
     }
     tbody.innerHTML = entries.map(e => `
@@ -3287,6 +3311,7 @@ async function herLoadAuditLog() {
         <td><span class="badge badge-blue">${e.env}</span></td>
         <td>${e.total}</td>
         <td>${e.sent}</td>
+        <td>${e.already_done || 0}</td>
         <td>${e.failed}</td>
         <td>${herAuditStatusBadge(e.status)}</td>
         <td style="white-space:nowrap;">${e.failed > 0 ? `
@@ -3298,7 +3323,7 @@ async function herLoadAuditLog() {
       </tr>
     `).join('');
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--danger);padding:32px;">Could not load the audit log: ${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:var(--danger);padding:32px;">Could not load the audit log: ${err.message}</td></tr>`;
   }
 }
 
@@ -3627,9 +3652,10 @@ async function herDispatchRun() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          // Already-revoked notifications count toward done, not failed — the
-          // desired end state (revoked) is already true for them.
-          sent: totalSent + totalAlreadyDone, failed: totalFailed, status,
+          // Kept separate (not merged) so Revocation History can show how many
+          // were freshly revoked by this run vs. already revoked beforehand —
+          // both count toward "done" for status purposes (see her_revocation.py).
+          sent: totalSent, already_done: totalAlreadyDone, failed: totalFailed, status,
           failed_ids: allFailed.slice(0, 50).map(f => f.notification_id),
         }),
       });
@@ -3682,7 +3708,7 @@ async function herDispatchRun() {
           && (result.failed || 0) === batchIds.length && batchIds.length > 0;
         if (batchFullyFailed) {
           const failedList = result.results?.failed || [];
-          const sig = (failedList[0]?.detail || failedList[0]?.error || 'unknown error').slice(0, 200);
+          const sig = failedList.length ? herFailureSignature(failedList[0]) : 'unknown error';
           if (sig === herFailStreakSignature) herFailStreakCount++;
           else { herFailStreakSignature = sig; herFailStreakCount = 1; }
         } else {

@@ -850,10 +850,13 @@ def dispatch_her_revocation():
                 record_her_audit_entry(
                     actor=actor, ticket=ticket_number, env=env,
                     total=len(notification_ids),
+                    sent=len(results['sent']),
                     # An "already revoked"-type response means this ID is already
-                    # in the state we wanted, so it counts toward sent/done, not
-                    # toward failed — see ALREADY_DONE_PHRASES in her_revocation.py.
-                    sent=len(results['sent']) + len(already_done),
+                    # in the state we wanted, so it counts as done, not failed —
+                    # kept separate from `sent` so History can show the split
+                    # instead of folding it into "freshly revoked". See
+                    # ALREADY_DONE_ERROR_CODES in her_revocation.py.
+                    already_done=len(already_done),
                     failed=len(results['failed']),
                     forced_revoke=forced_revoke,
                     failed_ids=[f['notification_id'] for f in results['failed']],
@@ -924,12 +927,13 @@ def her_audit_run_update(run_id):
     try:
         sent = int(data.get('sent', 0))
         failed = int(data.get('failed', 0))
+        already_done = int(data.get('already_done', 0))
     except (TypeError, ValueError):
-        return jsonify({'status': 'error', 'message': 'sent/failed must be numbers'}), 400
+        return jsonify({'status': 'error', 'message': 'sent/failed/already_done must be numbers'}), 400
 
     try:
         status = update_her_audit_entry(
-            run_id, sent=sent, failed=failed,
+            run_id, sent=sent, failed=failed, already_done=already_done,
             status=data.get('status'),
             failed_ids=data.get('failed_ids'),
         )

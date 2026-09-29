@@ -167,17 +167,37 @@ def revoke_notification(notification_id, token, env=DEFAULT_ENV, forced_revoke=T
     return False, last_status, last_body
 
 
-# Substrings that, if seen in a failed call's response body (case-insensitive),
-# mean the notification is already in the state we wanted — so it should count
-# as done, not as a failure needing attention. Starts empty on purpose: we
-# haven't yet confirmed the exact wording naapi2's 412s use, and guessing wrong
-# here would silently mark a real problem as "success". Once a real response
-# body is seen (it'll show up in a failed batch's log / detail field), add its
-# distinctive phrase(s) here, e.g. ['already revoked', 'already processed'].
+# naapi2's "already revoked" response turned out to carry no readable message
+# at all — it's a generic 412 with a support-ticket-style body, e.g.:
+#   {"error": {"code": "5006", "message": "An error occurred. Please contact
+#    support with error ID: 244cb441-...", "errorId": "244cb441-..."}}
+# The message text and errorId are useless for matching (errorId/requestId
+# are a fresh random UUID on every single call, even for the exact same
+# notification_id retried twice), so we match on the HTTP status plus the
+# numeric error code instead. IMPORTANT CAVEAT: because the message is a
+# generic "contact support" string, we're inferring that code 5006 means
+# "already revoked" from the examples seen so far — we don't have
+# confirmation from naapi2/the API team that 5006 is used *exclusively* for
+# that case. If a genuinely-failing (not-already-done) call ever also
+# returns 412/5006, this would wrongly count it as done. Worth confirming
+# with the API owners; until then this is a best-effort match.
+ALREADY_DONE_HTTP_STATUS = 412
+ALREADY_DONE_ERROR_CODES = {'5006'}
+
+# Fallback for any other response shape that DOES carry a distinctive human-
+# readable phrase (case-insensitive substring match against the raw body).
 ALREADY_DONE_PHRASES = []
 
 
-def _looks_already_done(body):
+def _looks_already_done(status, body):
+    if status == ALREADY_DONE_HTTP_STATUS:
+        try:
+            parsed = json.loads(body or '')
+            code = str((parsed.get('error') or {}).get('code', ''))
+            if code in ALREADY_DONE_ERROR_CODES:
+                return True
+        except (ValueError, AttributeError, TypeError):
+            pass
     body_l = (body or '').lower()
     return any(p in body_l for p in ALREADY_DONE_PHRASES)
 
@@ -204,7 +224,7 @@ def revoke_many(notification_ids, token, env=DEFAULT_ENV, forced_revoke=True, th
             notification_id, ok, status, body = fut.result()
             if ok:
                 results['sent'].append({'notification_id': notification_id, 'status': status})
-            elif _looks_already_done(body):
+            elif _looks_already_done(status, body):
                 results['already_done'].append({'notification_id': notification_id, 'error': str(status), 'detail': body})
             else:
                 results['failed'].append({'notification_id': notification_id, 'error': str(status), 'detail': body})
@@ -261,11 +281,18 @@ def _save_audit_log(entries):
     )
 
 
-def record_audit_entry(actor, ticket, env, total, sent, failed, forced_revoke=True, failed_ids=None):
+def record_audit_entry(actor, ticket, env, total, sent, failed, already_done=0, forced_revoke=True, failed_ids=None):
     """Writes one audit entry. Called once per dispatch — a multi-batch UI run
-    calls this once per batch, same as it calls the revoke API once per batch."""
+    calls this once per batch, same as it calls the revoke API once per batch.
+    `sent` is notifications freshly revoked by this call; `already_done` is
+    ones that were already in the revoked state (see _looks_already_done in
+    revoke_many) — kept separate so Revocation History can show both, instead
+    of folding already-done ones into `sent` where they'd be indistinguishable
+    from ones this run actually revoked."""
     ticket = (ticket or '').strip() or '—'
-    status = 'OK' if failed == 0 else ('FAILED' if sent == 0 else 'PARTIAL')
+    # A run counts as FAILED only if nothing ended up in the desired state at
+    # all — freshly revoked or already revoked both count as "done" here.
+    status = 'OK' if failed == 0 else ('FAILED' if (sent + already_done) == 0 else 'PARTIAL')
     entry = {
         'id': uuid.uuid4().hex,
         'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -275,6 +302,7 @@ def record_audit_entry(actor, ticket, env, total, sent, failed, forced_revoke=Tr
         'forced_revoke': bool(forced_revoke),
         'total': total,
         'sent': sent,
+        'already_done': already_done,
         'failed': failed,
         'status': status,
         # Cap how many failed IDs we keep per entry — enough to investigate a
@@ -305,6 +333,7 @@ def start_audit_entry(actor, ticket, env, total, forced_revoke=True):
         'forced_revoke': bool(forced_revoke),
         'total': total,
         'sent': 0,
+        'already_done': 0,
         'failed': 0,
         'status': 'RUNNING',
         'failed_ids': [],
@@ -316,7 +345,7 @@ def start_audit_entry(actor, ticket, env, total, forced_revoke=True):
     return entry['id']
 
 
-def update_audit_entry(entry_id, sent, failed, status=None, failed_ids=None):
+def update_audit_entry(entry_id, sent, failed, already_done=0, status=None, failed_ids=None):
     """Updates an existing entry (by id, from start_audit_entry) in place with
     new cumulative totals. Called after every batch of a long run so the row
     always reflects real progress, not just the final outcome. Returns the
@@ -332,8 +361,11 @@ def update_audit_entry(entry_id, sent, failed, status=None, failed_ids=None):
         if match is None:
             return None
         match['sent'] = sent
+        match['already_done'] = already_done
         match['failed'] = failed
-        match['status'] = status or ('OK' if failed == 0 else ('FAILED' if sent == 0 else 'PARTIAL'))
+        # See record_audit_entry: a run only counts as FAILED if nothing ended
+        # up in the desired state — freshly revoked or already-revoked both count.
+        match['status'] = status or ('OK' if failed == 0 else ('FAILED' if (sent + already_done) == 0 else 'PARTIAL'))
         if failed_ids is not None:
             match['failed_ids'] = (failed_ids or [])[:50]
         match['timestamp'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -516,10 +548,11 @@ def main():
     ticket = args.ticket or f'CLI-{int(time.time())}'
     status = record_audit_entry(
         actor=f'{getpass.getuser()} (cli)', ticket=ticket, env=args.env,
-        total=len(notification_ids), sent=len(results['sent']), failed=len(results['failed']),
+        total=len(notification_ids), sent=len(results['sent']),
+        already_done=len(results['already_done']), failed=len(results['failed']),
         failed_ids=[f['notification_id'] for f in results['failed']],
     )
-    print(f'completed: {len(results["sent"])} sent, {len(results["failed"])} failed')
+    print(f'completed: {len(results["sent"])} sent, {len(results["already_done"])} already revoked, {len(results["failed"])} failed')
     print(f'results written to: {out_path}')
     print(f'audit log: recorded as ticket={ticket} status={status} (visible in the ops-hub HER Revocation tab too)')
 
