@@ -2057,6 +2057,10 @@ let aggStopRequested = false, aggAbortCtrl = null;
 let disaggStopRequested = false, disaggAbortCtrl = null;
 let rcStopRequested = false, rcAbortCtrl = null;
 let herStopRequested = false, herAbortCtrl = null;
+// HER Revocation's batch loop runs server-side (see herDispatchRun) — this
+// tab just polls it, so it tracks the run_id it's currently watching rather
+// than an AbortController for a single in-flight fetch.
+let herCurrentRunId = null;
 
 function lockDispatchButton(btnId, stopBtnId) {
   const btn = document.getElementById(btnId);
@@ -2104,13 +2108,46 @@ function stopRcDispatch() {
   stopBtn.disabled = true;
   stopBtn.innerHTML = '■ &nbsp;Stopping...';
 }
-function stopHerDispatch() {
+async function stopHerDispatch() {
   if (!isHerRunning) return;
   herStopRequested = true;
-  if (herAbortCtrl) herAbortCtrl.abort();
   const stopBtn = document.getElementById('her-stop-btn');
   stopBtn.disabled = true;
   stopBtn.innerHTML = '■ &nbsp;Stopping...';
+  // The run itself now executes server-side (see herDispatchRun) so stopping
+  // it means telling the server to stop, not just aborting our own poll loop —
+  // otherwise the background run would just keep going unattended.
+  if (herCurrentRunId) await herRequestStopRun(herCurrentRunId, { silent: true });
+}
+
+// Asks the server to stop a background HER Revocation run after its current
+// batch. Used by both the main Stop button (while its own tab is still
+// watching a run it started) and the Revocation History table's own "Stop"
+// link on any RUNNING row — including one nobody's tab is actively watching
+// anymore, e.g. after the dispatching tab was reloaded or closed.
+// `opts.silent` skips the confirm dialog (the main Stop button already IS the
+// user's confirmation) and the own "not currently active" alert (the poll
+// loop's own status line will reflect that already).
+async function herRequestStopRun(runId, opts = {}) {
+  if (!opts.silent && !confirm('Stop this run after its current batch finishes? Progress made so far is kept, and it can be resumed later from its checkpoint.')) return;
+  try {
+    const resp = await fetch(`/api/her/run/${runId}/stop`, { method: 'POST', credentials: 'same-origin' });
+    const data = await resp.json();
+    if (!resp.ok || data.status !== 'ok') {
+      if (!opts.silent) alert(data.message || 'Could not stop this run.');
+      herLoadAuditLog();
+      return;
+    }
+    // A row that LOOKED like it was still running but actually wasn't (the
+    // server restarted mid-run and orphaned it) just got reconciled to
+    // Interrupted — that's new information worth surfacing even from the
+    // silent path, since it means the run stopped earlier than anyone knew.
+    if (data.reconciled) alert(data.message || 'This run had already stopped running — marked as Interrupted.');
+  } catch (err) {
+    if (!opts.silent) alert(`Could not stop this run: ${err.message}`);
+    return;
+  }
+  herLoadAuditLog();
 }
 
 // ─── AGGREGATION CONFIGURATOR ──────────────────────────────────
@@ -3247,7 +3284,23 @@ function herFailureSignature(entry) {
 // RUNNING/AUTO_PAUSED (in flight, or waiting on someone to look at it first);
 // only the "this run is over and didn't fully succeed" outcomes, which are
 // the ones that tend to pile up as noise you want to clean out.
-const HER_CLEARABLE_STATUSES = ['TERMINATED', 'PARTIAL', 'FAILED'];
+const HER_CLEARABLE_STATUSES = ['TERMINATED', 'PARTIAL', 'FAILED', 'INTERRUPTED'];
+
+// Keeps Revocation History updating on its own whenever something in it is
+// still RUNNING — a run now lives entirely on the server (see
+// her_revocation.py), so the *table* is how anyone, on any tab, sees it
+// progress to completion, including after the tab that started it was
+// reloaded or closed. Idempotent: safe to call every time the table loads.
+let herHistoryPollTimer = null;
+const HER_HISTORY_POLL_MS = 8000;
+function herManageHistoryAutoPoll(shouldPoll) {
+  if (shouldPoll && !herHistoryPollTimer) {
+    herHistoryPollTimer = setInterval(herLoadAuditLog, HER_HISTORY_POLL_MS);
+  } else if (!shouldPoll && herHistoryPollTimer) {
+    clearInterval(herHistoryPollTimer);
+    herHistoryPollTimer = null;
+  }
+}
 
 async function herClearAuditRun(runId, status) {
   if (!confirm(`Remove this ${status} entry from Revocation History? This can't be undone.`)) return;
@@ -3274,6 +3327,11 @@ function herAuditStatusBadge(status) {
   if (status === 'FAILED')      return '<span style="color:var(--danger);">✖ Failed</span>';
   if (status === 'TERMINATED')  return '<span style="color:var(--danger);">⏹ Terminated</span>';
   if (status === 'AUTO_PAUSED') return '<span style="color:var(--warn);">⏸ Auto-paused</span>';
+  // A row a server restart orphaned mid-run — it looked like RUNNING until
+  // someone clicked Stop on it (or the next startup) reconciled it. Distinct
+  // from TERMINATED (a person deliberately stopped it) so it's clear this one
+  // just got cut off, not stopped on purpose.
+  if (status === 'INTERRUPTED') return '<span style="color:var(--danger);">⚠ Interrupted</span>';
   return '<span style="color:var(--warn);">⚠ Partial</span>';
 }
 
@@ -3328,6 +3386,7 @@ async function herLoadAuditLog() {
     const entries = data.entries || [];
     if (!entries.length) {
       tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:32px;">No revocations recorded yet.</td></tr>';
+      herManageHistoryAutoPoll(false);
       return;
     }
     tbody.innerHTML = entries.map(e => `
@@ -3342,6 +3401,11 @@ async function herLoadAuditLog() {
         <td>${e.failed}</td>
         <td>${herAuditStatusBadge(e.status)}</td>
         <td style="white-space:nowrap;">
+          ${e.status === 'RUNNING' ? `
+            <a href="#" data-run-id="${e.id}"
+               onclick="herRequestStopRun(this.dataset.runId); return false;"
+               style="color:var(--danger);font-size:11px;margin-right:10px;">■ Stop</a>
+          ` : ''}
           ${e.failed > 0 ? `
             <a href="/api/her/audit/run/${e.id}/failed_ids?format=csv" style="color:var(--accent2);font-size:11px;margin-right:10px;">⬇ Failed IDs</a>
             <a href="#" data-run-id="${e.id}" data-ticket="${herEscapeAttr(e.ticket || '')}" data-env="${e.env}"
@@ -3356,6 +3420,15 @@ async function herLoadAuditLog() {
         </td>
       </tr>
     `).join('');
+
+    // At least one row still RUNNING — poll the whole table on a slow interval
+    // so a run started from a tab that's since been reloaded or closed (or
+    // started by a teammate) still visibly progresses to completion here,
+    // without anyone needing to babysit the tab that originally dispatched it.
+    // See her_revocation.py's background-run comment for why the run itself
+    // doesn't need a live tab watching it any more — this just keeps the
+    // shared table in sync with what the server is doing.
+    herManageHistoryAutoPoll(entries.some(e => e.status === 'RUNNING'));
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:var(--danger);padding:32px;">Could not load the audit log: ${err.message}</td></tr>`;
   }
@@ -3596,6 +3669,7 @@ async function herDispatchRun() {
 
   isHerRunning = true;
   herStopRequested = false;
+  herCurrentRunId = null;
   const unlockBtn = lockDispatchButton('her-dispatch-btn', 'her-stop-btn');
 
   const threads = parseInt(document.getElementById('her-param-threads').value) || 2;
@@ -3619,15 +3693,13 @@ async function herDispatchRun() {
   card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
   const HER_LOG_MAX_LINES = 300; // cap DOM nodes so a run with thousands of small
-                                  // batches doesn't slow the tab to a crawl
+                                  // progress updates doesn't slow the tab to a crawl
   let herLogLineCount = 0;
   function appendLog(line) {
     const cls = line.startsWith('[WARN]') ? 't-warn' : line.startsWith('[ERROR]') ? 't-err' : line.startsWith('[SUCCESS]') ? '' : 't-muted';
     logEl.innerHTML += `<div class="${cls}">${line}</div>`;
     herLogLineCount++;
     if (herLogLineCount > HER_LOG_MAX_LINES) {
-      // Drop the oldest visible lines rather than let the log grow without
-      // bound — a 33,000-batch run would otherwise render 33,000+ DOM nodes.
       while (logEl.childNodes.length > HER_LOG_MAX_LINES) logEl.removeChild(logEl.firstChild);
     }
     logEl.scrollTop = logEl.scrollHeight;
@@ -3636,221 +3708,153 @@ async function herDispatchRun() {
     bar.style.width = p + '%'; pct.textContent = p + '%'; lbl.textContent = label;
   }
 
-  const idBatches = chunkArray(ids, batchSize);
-  const totalBatches = idBatches.length;
-
+  const approxBatches = Math.max(1, Math.ceil(ids.length / Math.max(1, batchSize)));
   appendLog(`[INFO]  Ticket: ${ticketNumber}`);
   appendLog(`[INFO]  Environment: ${herCurrentEnv}`);
   appendLog(`[INFO]  Mode: ${herIdMode === 'single' ? `single ID — ${ids[0]}` : `file — ${ids.length} record(s)${skipCount ? ` (skipped first ${skipCount} of ${herLoadedIds.length})` : ''}`}`);
   appendLog(`[INFO]  forcedRevoke: ${herForcedRevoke}`);
-  appendLog(`[INFO]  Batching: ${ids.length} record(s) into ${totalBatches} batch(es) of up to ${batchSize}, ${threads} thread(s) each`);
-  setProgress(0, `Batch 0/${totalBatches}...`);
+  appendLog(`[INFO]  Batching: ${ids.length} record(s) into ~${approxBatches} batch(es) of up to ${batchSize}, ${threads} thread(s) each`);
+  appendLog(`[INFO]  This run executes on the server, not this tab — reloading or closing this page won't stop it. Revocation History below tracks it either way.`);
+  setProgress(0, 'Starting…');
 
-  let totalSent = 0, totalFailed = 0, totalAlreadyDone = 0;
-  const allFailed = [];
-  let hadError = false;
-
-  // Auto-pause: if several batches in a row fail 100% with the exact same
-  // error, that's almost always something systemic (an expired token, a
-  // network/DNS problem, or the API rejecting every call the same way) —
-  // not the normal handful of per-ID failures. Burning through the rest of a
-  // 600k-ID run against a broken token wastes hours, so stop and say why
-  // instead of grinding on.
-  const AUTO_PAUSE_THRESHOLD = 5;
-  let herFailStreakSignature = null;
-  let herFailStreakCount = 0;
-  let herAutoPaused = false;
-
-  // One Revocation History row for this whole run, created up front and kept
-  // current after every batch — so a run spanning hundreds of batches still
-  // shows accurate progress (not nothing) if the tab closes before it finishes,
-  // and so the table never ends up with one row per batch.
-  let herAuditRunId = null;
+  // The whole multi-batch loop now runs server-side (see start_background_run
+  // in her_revocation.py) — this tab starts it, then polls the one audit row
+  // it's writing to for progress. That's the point: this fetch returns almost
+  // immediately with a run_id, it doesn't hold the loop open in this tab.
+  let runId;
   try {
-    const startResp = await fetch('/api/her/audit/run/start', {
+    const startResp = await fetch('/api/her/run/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify({
-        ticket_number: ticketNumber, env: herCurrentEnv,
-        forced_revoke: herForcedRevoke, total: ids.length,
+        env: herCurrentEnv,
+        ticket_number: ticketNumber,
+        notification_ids: ids,
+        forced_revoke: herForcedRevoke,
+        threads,
+        batch_size: batchSize,
+        file_signature: herIdMode === 'file' ? herCurrentFileSignature : null,
+        skip_count: skipCount,
       }),
     });
     const startResult = await startResp.json();
-    if (startResult.status === 'ok') herAuditRunId = startResult.run_id;
-  } catch (e) { /* fall through — batches below fall back to per-batch logging */ }
-
-  async function updateHerAuditRun(status) {
-    if (!herAuditRunId) return;
-    try {
-      await fetch(`/api/her/audit/run/${herAuditRunId}/update`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          // Kept separate (not merged) so Revocation History can show how many
-          // were freshly revoked by this run vs. already revoked beforehand —
-          // both count toward "done" for status purposes (see her_revocation.py).
-          sent: totalSent, already_done: totalAlreadyDone, failed: totalFailed, status,
-          failed_ids: allFailed.slice(0, 50).map(f => f.notification_id),
-        }),
-      });
-    } catch (e) { /* best-effort — final update below still has the real outcome */ }
+    if (!startResp.ok || startResult.status !== 'ok') {
+      appendLog(`[ERROR]  Could not start the run — ${startResult.message || `HTTP ${startResp.status}`}`);
+      statusLine.innerHTML = '<span style="color:var(--danger);">✖ Failed to start</span>';
+      bar.style.background = 'var(--danger)';
+      isHerRunning = false;
+      unlockBtn();
+      return;
+    }
+    runId = startResult.run_id;
+    herCurrentRunId = runId;
+  } catch (err) {
+    appendLog(`[ERROR]  Could not start the run — ${err.message}`);
+    statusLine.innerHTML = '<span style="color:var(--danger);">✖ Failed to start</span>';
+    bar.style.background = 'var(--danger)';
+    isHerRunning = false;
+    unlockBtn();
+    return;
   }
 
-  for (let b = 0; b < totalBatches; b++) {
-    if (herStopRequested) {
-      appendLog(`[WARN]  Run terminated by user — stopped before batch ${b + 1}/${totalBatches}`);
-      break;
-    }
-    if (herAutoPaused) break; // message for this was already logged when the streak tripped
-    const batchIds = idBatches[b];
-    const payload = {
-      env: herCurrentEnv,
-      ticket_number: ticketNumber,
-      notification_ids: batchIds,
-      forced_revoke: herForcedRevoke,
-      threads,
-      // When we have a run-level audit row, per-batch calls don't write their
-      // own — this run's row is updated below instead. Falls back to the old
-      // one-row-per-batch behavior if /api/her/audit/run/start didn't succeed.
-      record_audit: !herAuditRunId,
-    };
+  // Poll the audit row this run keeps writing to. sent+already_done+failed
+  // vs. total is a reliable progress measure regardless of exactly where the
+  // server's own batch loop currently is — no need for batch-by-batch detail
+  // client-side any more, since the loop itself no longer lives here.
+  const HER_POLL_MS = 2000;
+  const HER_MAX_POLL_FAILURES = 10; // ~20s of a dead connection before giving up on watching (the run itself is unaffected)
+  let lastProcessed = -1;
+  let finalEntry = null;
+  let pollFailures = 0;
 
-    herAbortCtrl = new AbortController();
+  while (true) {
+    let entry, httpStatus;
     try {
-      const resp = await fetch('/dispatch/her_revocation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: herAbortCtrl.signal,
-      });
-      const result = await resp.json();
-
-      if (result.status === 'ok') {
-        totalSent += result.sent || 0;
-        totalAlreadyDone += result.already_done || 0;
-        totalFailed += result.failed || 0;
-        if (result.failed > 0 && result.results?.failed) allFailed.push(...result.results.failed);
-        appendLog(`[INFO]  Batch ${b + 1}/${totalBatches} — revoked ${result.sent}/${result.total}`
-          + `${result.already_done ? `, already done ${result.already_done}` : ''}`
-          + `${result.failed ? `, failed ${result.failed}` : ''}`);
-
-        // A batch that failed end-to-end (nothing sent, nothing already-done)
-        // is a candidate for the auto-pause streak; anything with at least
-        // some success resets it, since that's normal per-ID noise, not a
-        // systemic problem.
-        const batchFullyFailed = (result.sent || 0) === 0 && (result.already_done || 0) === 0
-          && (result.failed || 0) === batchIds.length && batchIds.length > 0;
-        if (batchFullyFailed) {
-          const failedList = result.results?.failed || [];
-          const sig = failedList.length ? herFailureSignature(failedList[0]) : 'unknown error';
-          if (sig === herFailStreakSignature) herFailStreakCount++;
-          else { herFailStreakSignature = sig; herFailStreakCount = 1; }
-        } else {
-          herFailStreakSignature = null;
-          herFailStreakCount = 0;
-        }
-      } else {
-        hadError = true;
-        totalFailed += batchIds.length;
-        appendLog(`[ERROR]  Batch ${b + 1}/${totalBatches} failed — ${result.message || 'Unknown error'}`);
-        const sig = `HTTP error: ${result.message || 'Unknown error'}`;
-        if (sig === herFailStreakSignature) herFailStreakCount++;
-        else { herFailStreakSignature = sig; herFailStreakCount = 1; }
-      }
+      const resp = await fetch(`/api/her/audit/run/${runId}`, { credentials: 'same-origin' });
+      httpStatus = resp.status;
+      const data = await resp.json();
+      if (!resp.ok || data.status !== 'ok') throw new Error(data.message || `HTTP ${resp.status}`);
+      entry = data.entry;
+      pollFailures = 0;
     } catch (err) {
-      if (err.name === 'AbortError') {
-        appendLog(`[WARN]  Batch ${b + 1}/${totalBatches} aborted — run terminated by user`);
+      pollFailures++;
+      if (httpStatus === 401 || httpStatus === 403) {
+        appendLog(`[ERROR]  Lost permission to watch this run (${err.message}) — you may need to log in again. The run itself keeps going on the server; check Revocation History once you're back.`);
         break;
       }
-      hadError = true;
-      totalFailed += batchIds.length;
-      appendLog(`[ERROR]  Batch ${b + 1}/${totalBatches} failed — ${err.message}`);
-      const sig = `Network error: ${err.message}`;
-      if (sig === herFailStreakSignature) herFailStreakCount++;
-      else { herFailStreakSignature = sig; herFailStreakCount = 1; }
+      if (pollFailures >= HER_MAX_POLL_FAILURES) {
+        appendLog(`[WARN]  Couldn't reach the server after ${pollFailures} attempts (${err.message}) — giving up on watching from this tab. The run keeps going on the server regardless; check Revocation History for its outcome.`);
+        break;
+      }
+      appendLog(`[WARN]  Couldn't fetch progress (${err.message}) — retrying...`);
+      await new Promise(r => setTimeout(r, HER_POLL_MS));
+      continue;
     }
 
-    const donePct = Math.round(((b + 1) / totalBatches) * 100);
-    const doneSoFar = totalSent + totalAlreadyDone;
-    setProgress(donePct, `Batch ${b + 1}/${totalBatches} · ${doneSoFar} done`);
-    await updateHerAuditRun('RUNNING');
-
-    // Best-effort checkpoint save — lets a later run of this same file offer
-    // "resume from here" instead of the user having to remember this number.
-    if (herIdMode === 'file' && herCurrentFileSignature) {
-      const newPosition = Math.min(skipCount + (b + 1) * batchSize, herLoadedIds.length);
-      herSaveCheckpoint(newPosition, herLoadedIds.length, ticketNumber, herCurrentEnv);
+    const processed = (entry.sent || 0) + (entry.already_done || 0) + (entry.failed || 0);
+    if (processed !== lastProcessed) {
+      lastProcessed = processed;
+      const pctDone = Math.min(100, Math.round((processed / Math.max(1, entry.total)) * 100));
+      setProgress(pctDone, `${processed.toLocaleString()}/${entry.total.toLocaleString()} processed`);
+      appendLog(`[INFO]  Progress: ${processed.toLocaleString()}/${entry.total.toLocaleString()} — revoked ${entry.sent}`
+        + `${entry.already_done ? `, already done ${entry.already_done}` : ''}`
+        + `${entry.failed ? `, failed ${entry.failed}` : ''}`);
     }
 
-    if (herFailStreakCount >= AUTO_PAUSE_THRESHOLD) {
-      herAutoPaused = true;
-      appendLog(`[WARN]  Auto-pausing after batch ${b + 1}/${totalBatches} — the last ${herFailStreakCount} batches all failed`
-        + ` with the same error ("${herFailStreakSignature}"). This looks systemic (an expired token, a network issue, or the`
-        + ` API rejecting every call the same way) rather than normal per-ID failures. Fix the underlying issue, then re-run —`
-        + ` this file's position has been checkpointed, so "Resume from here" will pick up where this stopped.`);
-    }
+    if (herStopRequested) statusLine.innerHTML = '<span style="color:var(--warn);">⏹ Stopping…</span>';
+
+    if (entry.status !== 'RUNNING') { finalEntry = entry; break; }
+    await new Promise(r => setTimeout(r, HER_POLL_MS));
   }
 
-  // "Done" = actually revoked this run, plus ones a call told us were already
-  // revoked — both mean the notification ends up in the state we wanted.
-  const totalDone = totalSent + totalAlreadyDone;
+  isHerRunning = false;
+  herCurrentRunId = null;
+  unlockBtn();
 
-  if (allFailed.length) {
-    appendLog(`[WARN]  ${allFailed.length} record(s) failed across all batches (after auto-retry):`);
-    allFailed.slice(0, 20).forEach(f => appendLog(`[ERROR]  ${f.notification_id} — ${f.error}${f.detail ? ` — ${f.detail}` : ''}`));
-    if (allFailed.length > 20) appendLog(`[INFO]  ... and ${allFailed.length - 20} more failure(s)`);
+  if (!finalEntry) {
+    // We stopped watching (connection/permission trouble), but the run itself
+    // is still whatever the server says it is — don't claim an outcome we
+    // don't actually know. herLoadAuditLog() below shows the real status once
+    // it's reachable again.
+    herLoadAuditLog();
+    return;
   }
 
-  bar.style.background = herStopRequested ? 'var(--danger)' : herAutoPaused ? 'var(--warn)' : hadError && totalDone === 0 ? 'var(--danger)' : totalFailed > 0 ? 'var(--warn)' : 'var(--success)';
-  appendLog(herStopRequested
-    ? `[WARN]  HER Revocation run TERMINATED by user — ${totalDone}/${ids.length} notification(s) done before stopping`
-    : herAutoPaused
-      ? `[WARN]  HER Revocation run AUTO-PAUSED — ${totalDone}/${ids.length} notification(s) done before pausing (repeated identical failures)`
-      : `[SUCCESS]  HER Revocation run complete — ${totalDone}/${ids.length} notification(s) done across ${totalBatches} batch(es)`
-        + `${totalAlreadyDone ? ` (${totalSent} revoked now, ${totalAlreadyDone} already revoked)` : ''}`);
-  statusLine.innerHTML = herStopRequested
+  const totalDone = (finalEntry.sent || 0) + (finalEntry.already_done || 0);
+  const totalFailed = finalEntry.failed || 0;
+
+  if (finalEntry.note) appendLog(`[WARN]  ${finalEntry.note}`);
+
+  bar.style.background = finalEntry.status === 'TERMINATED' ? 'var(--danger)'
+    : finalEntry.status === 'AUTO_PAUSED' ? 'var(--warn)'
+    : finalEntry.status === 'FAILED' ? 'var(--danger)'
+    : totalFailed > 0 ? 'var(--warn)' : 'var(--success)';
+
+  appendLog(finalEntry.status === 'TERMINATED'
+    ? `[WARN]  HER Revocation run TERMINATED — ${totalDone}/${finalEntry.total} notification(s) done before stopping`
+    : finalEntry.status === 'AUTO_PAUSED'
+      ? `[WARN]  HER Revocation run AUTO-PAUSED — ${totalDone}/${finalEntry.total} notification(s) done before pausing (repeated identical failures)`
+      : `[SUCCESS]  HER Revocation run complete — ${totalDone}/${finalEntry.total} notification(s) done`
+        + `${finalEntry.already_done ? ` (${finalEntry.sent} revoked now, ${finalEntry.already_done} already revoked)` : ''}`);
+
+  statusLine.innerHTML = finalEntry.status === 'TERMINATED'
     ? '<span style="color:var(--danger);">⏹ Terminated</span>'
-    : herAutoPaused
+    : finalEntry.status === 'AUTO_PAUSED'
       ? '<span style="color:var(--warn);">⏸ Auto-paused</span>'
-      : totalFailed === 0
-        ? '<span style="color:var(--success);">✔ Completed</span>'
-        : totalDone === 0
-          ? '<span style="color:var(--danger);">✖ Failed</span>'
-          : '<span style="color:var(--warn);">⚠ Partial</span>';
+      : herAuditStatusBadge(finalEntry.status);
 
   herNotify(
-    herAutoPaused ? 'HER Revocation auto-paused' : herStopRequested ? 'HER Revocation stopped' : 'HER Revocation run finished',
-    `Ticket ${ticketNumber} · ${totalDone}/${ids.length} done, ${totalFailed} failed${herAutoPaused ? ' — paused on repeated identical errors' : ''}`
+    finalEntry.status === 'AUTO_PAUSED' ? 'HER Revocation auto-paused' : finalEntry.status === 'TERMINATED' ? 'HER Revocation stopped' : 'HER Revocation run finished',
+    `Ticket ${ticketNumber} · ${totalDone}/${finalEntry.total} done, ${totalFailed} failed${finalEntry.status === 'AUTO_PAUSED' ? ' — paused on repeated identical errors' : ''}`
   );
 
   // HER Revocation is intentionally NOT logged to the shared Run History —
   // it has its own dedicated audit trail (the Revocation History card below,
   // backed by /api/her/audit in S3), which is what herUpdateStats() reads
   // from for these cards instead of the shared /api/logs backend.
-
-  // Final update to this run's single Revocation History row — TERMINATED if
-  // the user stopped it, AUTO_PAUSED if the repeated-error detector tripped,
-  // otherwise the normal OK/FAILED/PARTIAL computed server-side from the totals.
-  await updateHerAuditRun(herStopRequested ? 'TERMINATED' : herAutoPaused ? 'AUTO_PAUSED' : null);
-  // The row above only keeps a 50-item preview of failed IDs. Save the
-  // COMPLETE list (however many thousand that might be) separately, so it can
-  // be downloaded later from the "Failed IDs" link on this run's row.
-  if (herAuditRunId && allFailed.length) {
-    try {
-      await fetch(`/api/her/audit/run/${herAuditRunId}/failed_ids`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ failed_ids: allFailed }),
-      });
-    } catch (e) { /* best-effort — the run's own result already succeeded/failed regardless */ }
-  }
-
   herUpdateStats();
-  herLoadAuditLog(); // pull in the one server-side row this run just wrote/updated
-
-  isHerRunning = false;
-  herAbortCtrl = null;
-  unlockBtn();
+  herLoadAuditLog(); // pull in the final state of the row this run just wrote
 }
 
 // ─── BC SCHEDULE VALIDATION ─────────────────────────────────────
