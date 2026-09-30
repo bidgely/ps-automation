@@ -83,6 +83,10 @@ from her_revocation import (
     delete_audit_entry as delete_her_audit_entry, CLEARABLE_STATUSES as HER_CLEARABLE_STATUSES,
     save_failed_ids as save_her_failed_ids, get_failed_ids as get_her_failed_ids,
     save_checkpoint as save_her_checkpoint, get_checkpoint as get_her_checkpoint,
+    start_background_run as start_her_background_run, request_stop as request_her_run_stop,
+    is_run_active as is_her_run_active, get_audit_entry as get_her_audit_entry,
+    reconcile_orphaned_run as reconcile_her_orphaned_run,
+    reconcile_orphaned_runs_on_startup as reconcile_her_orphaned_runs_on_startup,
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -946,6 +950,124 @@ def her_audit_run_update(run_id):
     return jsonify({'status': 'ok', 'audit_status': status})
 
 
+@app.route('/api/her/run/start', methods=['POST'])
+@admin_or_ps_required
+def her_run_start():
+    """Starts a multi-batch HER Revocation run on a background thread on the
+    server, instead of the browser tab driving every batch itself. This is
+    what makes a run survive a reloaded page, a closed tab, or a sleeping
+    laptop — see the big comment above _active_runs in her_revocation.py for
+    why. Returns run_id right away; the frontend polls
+    GET /api/her/audit/run/<run_id> for progress instead of waiting on this
+    request, which would otherwise have to stay open for the whole run."""
+    data = request.json or {}
+    role = session['user']['role']
+    ok, err = check_dispatch_permission(role, 'her_revocation', '')
+    if not ok:
+        return jsonify({'status': 'error', 'message': err}), 403
+
+    env = data.get('env', 'NA2')
+    if env not in REVOKE_API_CONFIG:
+        return jsonify({'status': 'error', 'message': f'No revoke host configured for env {env} yet'}), 400
+
+    ticket_number = (data.get('ticket_number') or '').strip()
+    if not ticket_number:
+        return jsonify({'status': 'error', 'message': 'A ticket number is required for every revocation run'}), 400
+
+    notification_ids = data.get('notification_ids') or []
+    if not isinstance(notification_ids, list) or not notification_ids:
+        return jsonify({'status': 'error', 'message': 'No notification IDs to revoke'}), 400
+
+    token = get_her_revoke_token()
+    if not token:
+        log.error('HER background revoke attempted with no HER_REVOKE_ACCESS_TOKEN set')
+        return jsonify({'status': 'error', 'message': 'No revoke token configured on the server — ask an admin to set today\'s token'}), 500
+
+    forced_revoke = bool(data.get('forced_revoke', True))
+    try:
+        threads = max(1, int(data.get('threads', 2)))
+    except (TypeError, ValueError):
+        threads = 2
+    try:
+        batch_size = max(1, int(data.get('batch_size') or len(notification_ids)))
+    except (TypeError, ValueError):
+        batch_size = len(notification_ids)
+    file_signature = (data.get('file_signature') or '').strip() or None
+    try:
+        skip_count = int(data.get('skip_count', 0))
+    except (TypeError, ValueError):
+        skip_count = 0
+
+    actor = session['user']['email']
+    log.info(f'HER background revoke started by {actor} — ticket={ticket_number} env={env} '
+             f'count={len(notification_ids)} batch_size={batch_size} threads={threads}')
+    try:
+        run_id = start_her_background_run(
+            actor=actor, ticket=ticket_number, env=env, notification_ids=notification_ids,
+            token=token, forced_revoke=forced_revoke, threads=threads, batch_size=batch_size,
+            file_signature=file_signature, skip_count=skip_count,
+        )
+    except Exception:
+        log.exception('Failed to start HER background run')
+        return jsonify({'status': 'error', 'message': 'Could not start run (audit store unreachable)'}), 502
+    return jsonify({'status': 'ok', 'run_id': run_id})
+
+
+@app.route('/api/her/run/<run_id>/stop', methods=['POST'])
+@admin_or_ps_required
+def her_run_stop(run_id):
+    """Signals a background run to stop after its current batch. If run_id
+    isn't tracked in memory anymore, that's either because it already reached
+    a terminal status (nothing to do), or because it's a row orphaned by a
+    server restart while it was in progress — still showing RUNNING because
+    nothing is left to ever update it again (see the _active_runs comment in
+    her_revocation.py). Someone clicking Stop on a row like that is exactly
+    the signal that it's stuck, so this reconciles it right here instead of
+    just saying "can't stop, not active" and leaving the row broken."""
+    role = session['user']['role']
+    ok, err = check_dispatch_permission(role, 'her_revocation', '')
+    if not ok:
+        return jsonify({'status': 'error', 'message': err}), 403
+
+    if request_her_run_stop(run_id):
+        return jsonify({'status': 'ok'})
+
+    try:
+        reconciled = reconcile_her_orphaned_run(run_id)
+    except Exception:
+        log.exception('Failed to check/reconcile a possibly-orphaned HER run')
+        return jsonify({'status': 'error', 'message': 'Could not check this run (audit store unreachable)'}), 502
+    if reconciled:
+        return jsonify({
+            'status': 'ok',
+            'reconciled': True,
+            'message': 'This run had already stopped running — most likely the server restarted while it was in progress. Marked as Interrupted.',
+        })
+    return jsonify({
+        'status': 'error',
+        'message': 'This run is not currently active on the server, and its row is not stuck on RUNNING — there may be nothing to stop.',
+    }), 404
+
+
+@app.route('/api/her/audit/run/<run_id>', methods=['GET'])
+@admin_or_ps_required
+def her_audit_run_get(run_id):
+    """One audit row, for the frontend to poll while a background run is in
+    progress — much cheaper than re-fetching and re-rendering the whole
+    Revocation History table every couple of seconds. Also reports whether
+    the run is still actively executing in this process (`active`), so the UI
+    can tell a genuinely-running row apart from one orphaned by a server
+    restart (still shows RUNNING, but nothing is actually advancing it)."""
+    try:
+        entry = get_her_audit_entry(run_id)
+    except Exception:
+        log.exception('Failed to read HER audit entry')
+        return jsonify({'status': 'error', 'message': 'Could not read audit log (store unreachable)'}), 502
+    if entry is None:
+        return jsonify({'status': 'error', 'message': 'Entry not found'}), 404
+    return jsonify({'status': 'ok', 'entry': entry, 'active': is_her_run_active(run_id)})
+
+
 @app.route('/api/her/audit/run/<run_id>/failed_ids', methods=['POST'])
 @admin_or_ps_required
 def her_audit_run_save_failed_ids(run_id):
@@ -1094,6 +1216,22 @@ if __name__ == '__main__':
     if not get_token_status()['set']:
         print('  ⚠ No HER revoke token set — HER Revocation tab will fail until an admin')
         print('    pastes today\'s token there, or HER_REVOKE_ACCESS_TOKEN is set as a fallback.\n')
+
+    # Any HER Revocation audit row still marked RUNNING at this exact moment
+    # cannot belong to this process — it hasn't run anything yet — so it can
+    # only be left over from whatever instance was handling HER Revocation
+    # before this one started (a redeploy or a crash killed it mid-run,
+    # orphaning the background thread that was updating it). Reconciling those
+    # here means a run interrupted by the very restart that's happening right
+    # now gets fixed automatically, instead of sitting stuck on "Running"
+    # forever with no way to tell it apart from one that's actually still going.
+    try:
+        reconciled_count = reconcile_her_orphaned_runs_on_startup()
+        if reconciled_count:
+            print(f'  ⚠ Found {reconciled_count} HER Revocation run(s) stuck on RUNNING from a previous instance')
+            print('    of this process — marked as Interrupted in Revocation History.\n')
+    except Exception:
+        log.exception('Failed to check for orphaned HER Revocation runs at startup')
 
     # Surface CA/EU/na credential setup at startup rather than waiting for someone
     # to hit Dispatch and get a ProfileNotFound error — every named profile this
