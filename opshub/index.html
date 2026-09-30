@@ -3242,8 +3242,35 @@ function herFailureSignature(entry) {
   return `${status}:${raw.replace(HER_UUID_RE, '<id>').slice(0, 200)}`;
 }
 
+// Rows the Revocation History table lets you individually clear — never a
+// clean OK run (a real success worth keeping as a record) or one still
+// RUNNING/AUTO_PAUSED (in flight, or waiting on someone to look at it first);
+// only the "this run is over and didn't fully succeed" outcomes, which are
+// the ones that tend to pile up as noise you want to clean out.
+const HER_CLEARABLE_STATUSES = ['TERMINATED', 'PARTIAL', 'FAILED'];
+
+async function herClearAuditRun(runId, status) {
+  if (!confirm(`Remove this ${status} entry from Revocation History? This can't be undone.`)) return;
+  try {
+    const resp = await fetch(`/api/her/audit/run/${runId}`, { method: 'DELETE', credentials: 'same-origin' });
+    const data = await resp.json();
+    if (!resp.ok || data.status !== 'ok') {
+      alert(data.message || 'Could not clear this entry.');
+      return;
+    }
+    herLoadAuditLog();
+  } catch (err) {
+    alert(`Could not clear this entry: ${err.message}`);
+  }
+}
+
 function herAuditStatusBadge(status) {
   if (status === 'OK')          return '<span style="color:var(--success);">✔ OK</span>';
+  // A run in progress writes 'RUNNING' after every batch so the row stays
+  // live (see updateHerAuditRun) — without this case it fell through to the
+  // default below and showed "Partial" for a run that hadn't even finished,
+  // which reads as a real problem when it's actually still going fine.
+  if (status === 'RUNNING')     return '<span style="color:var(--accent2);">⏳ Running…</span>';
   if (status === 'FAILED')      return '<span style="color:var(--danger);">✖ Failed</span>';
   if (status === 'TERMINATED')  return '<span style="color:var(--danger);">⏹ Terminated</span>';
   if (status === 'AUTO_PAUSED') return '<span style="color:var(--warn);">⏸ Auto-paused</span>';
@@ -3314,12 +3341,19 @@ async function herLoadAuditLog() {
         <td>${e.already_done || 0}</td>
         <td>${e.failed}</td>
         <td>${herAuditStatusBadge(e.status)}</td>
-        <td style="white-space:nowrap;">${e.failed > 0 ? `
-          <a href="/api/her/audit/run/${e.id}/failed_ids?format=csv" style="color:var(--accent2);font-size:11px;margin-right:10px;">⬇ Failed IDs</a>
-          <a href="#" data-run-id="${e.id}" data-ticket="${herEscapeAttr(e.ticket || '')}" data-env="${e.env}"
-             onclick="herRetryFailedIds(this.dataset.runId, this.dataset.ticket, this.dataset.env); return false;"
-             style="color:var(--warn);font-size:11px;">↻ Retry Failed</a>
-        ` : ''}</td>
+        <td style="white-space:nowrap;">
+          ${e.failed > 0 ? `
+            <a href="/api/her/audit/run/${e.id}/failed_ids?format=csv" style="color:var(--accent2);font-size:11px;margin-right:10px;">⬇ Failed IDs</a>
+            <a href="#" data-run-id="${e.id}" data-ticket="${herEscapeAttr(e.ticket || '')}" data-env="${e.env}"
+               onclick="herRetryFailedIds(this.dataset.runId, this.dataset.ticket, this.dataset.env); return false;"
+               style="color:var(--warn);font-size:11px;margin-right:10px;">↻ Retry Failed</a>
+          ` : ''}
+          ${HER_CLEARABLE_STATUSES.includes(e.status) ? `
+            <a href="#" data-run-id="${e.id}" data-status="${e.status}"
+               onclick="herClearAuditRun(this.dataset.runId, this.dataset.status); return false;"
+               style="color:var(--danger);font-size:11px;">✕ Clear</a>
+          ` : ''}
+        </td>
       </tr>
     `).join('');
   } catch (err) {

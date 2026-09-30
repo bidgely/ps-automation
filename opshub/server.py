@@ -80,6 +80,7 @@ from her_revocation import (
     get_token_status, set_token as set_her_revoke_token,
     record_audit_entry as record_her_audit_entry, get_audit_log as get_her_audit_log,
     start_audit_entry as start_her_audit_entry, update_audit_entry as update_her_audit_entry,
+    delete_audit_entry as delete_her_audit_entry, CLEARABLE_STATUSES as HER_CLEARABLE_STATUSES,
     save_failed_ids as save_her_failed_ids, get_failed_ids as get_her_failed_ids,
     save_checkpoint as save_her_checkpoint, get_checkpoint as get_her_checkpoint,
 )
@@ -986,6 +987,36 @@ def her_audit_run_get_failed_ids(run_id):
             headers={'Content-Disposition': f'attachment; filename=her_revocation_failed_{run_id}.csv'},
         )
     return jsonify({'status': 'ok', 'entries': entries})
+
+
+@app.route('/api/her/audit/run/<run_id>', methods=['DELETE'])
+@admin_or_ps_required
+def her_audit_run_delete(run_id):
+    """Removes one Revocation History row — the table's 'Clear' link, shown
+    only on TERMINATED / PARTIAL / FAILED rows (never on a clean OK run, or one
+    still RUNNING/AUTO_PAUSED). Re-checked here server-side too, so a raw API
+    call can't clear a row the UI wouldn't have offered a Clear link for."""
+    try:
+        entries = get_her_audit_log(limit=1000)
+    except Exception:
+        log.exception('Failed to read HER audit log before delete')
+        return jsonify({'status': 'error', 'message': 'Could not read audit log (store unreachable)'}), 502
+    target = next((e for e in entries if e.get('id') == run_id), None)
+    if target is None:
+        return jsonify({'status': 'error', 'message': 'Entry not found'}), 404
+    if (target.get('status') or '') not in HER_CLEARABLE_STATUSES:
+        return jsonify({
+            'status': 'error',
+            'message': f"Only Terminated, Partial or Failed entries can be cleared (this one is {target.get('status')})",
+        }), 400
+    try:
+        removed_status = delete_her_audit_entry(run_id)
+    except Exception:
+        log.exception('Failed to delete HER audit entry — nothing else was affected')
+        return jsonify({'status': 'error', 'message': 'Could not delete entry (audit store unreachable)'}), 502
+    if removed_status is None:
+        return jsonify({'status': 'error', 'message': 'Entry not found'}), 404
+    return jsonify({'status': 'ok', 'removed_status': removed_status})
 
 
 @app.route('/api/her/checkpoint/<signature>', methods=['GET'])

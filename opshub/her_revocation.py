@@ -373,6 +373,36 @@ def update_audit_entry(entry_id, sent, failed, already_done=0, status=None, fail
         return match['status']
 
 
+# Statuses a Revocation History row can be individually cleared from — never
+# OK (a clean success worth keeping as a record) or RUNNING/AUTO_PAUSED (still
+# in flight or waiting on someone to look at it), only the "this run is over
+# and didn't fully succeed" outcomes that tend to pile up as noise.
+CLEARABLE_STATUSES = {'TERMINATED', 'PARTIAL', 'FAILED'}
+
+
+def delete_audit_entry(entry_id):
+    """Removes one entry from the shared HER audit log by id — used by the
+    Revocation History 'Clear' action. The caller (the /api/her/audit/run/<id>
+    DELETE route) is responsible for checking the entry's status is in
+    CLEARABLE_STATUSES before calling this; this function itself just removes
+    whatever id it's given, so it stays reusable without baking in that policy
+    twice. Returns the removed entry's status, or None if entry_id wasn't found
+    (e.g. it was already cleared, or the log was wiped from under this call)."""
+    with _audit_lock:
+        entries = _load_audit_log()
+        match = None
+        remaining = []
+        for e in entries:
+            if match is None and e.get('id') == entry_id:
+                match = e
+                continue
+            remaining.append(e)
+        if match is None:
+            return None
+        _save_audit_log(remaining)
+        return match.get('status')
+
+
 def get_audit_log(limit=200, ticket=None, env=None, actor=None):
     """Most-recent-first audit entries, optionally narrowed by ticket/env/actor
     (ticket and actor match as a substring, env as an exact match)."""
