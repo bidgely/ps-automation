@@ -89,19 +89,6 @@ from her_revocation import (
     reconcile_orphaned_runs_on_startup as reconcile_her_orphaned_runs_on_startup,
 )
 
-# Reprocessing (stuck utility-file chunks) lives in its own script too, same
-# reasoning as HER Revocation above — see reprocessing.py's module comment.
-import reprocessing
-from reprocessing import (
-    REPROCESS_API_CONFIG, get_pilot_configs as get_reprocessing_pilot_configs,
-    get_audit_log as get_reprocessing_audit_log, CLEARABLE_STATUSES as REPROCESSING_CLEARABLE_STATUSES,
-    start_background_run as start_reprocessing_background_run, request_stop as request_reprocessing_run_stop,
-    is_run_active as is_reprocessing_run_active, get_audit_entry as get_reprocessing_audit_entry,
-    delete_audit_entry as delete_reprocessing_audit_entry,
-    reconcile_orphaned_run as reconcile_reprocessing_orphaned_run,
-    reconcile_orphaned_runs_on_startup as reconcile_reprocessing_orphaned_runs_on_startup,
-)
-
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 log = logging.getLogger(__name__)
 
@@ -610,8 +597,6 @@ def check_dispatch_permission(role, script_type, queue_name):
             return False, 'Your role is restricted to the priority queue only'
     if script_type == 'her_revocation' and role not in ('admin', 'user'):
         return False, 'HER Revocation is restricted to admin and PS team members'
-    if script_type == 'reprocessing' and role not in ('admin', 'user'):
-        return False, 'Reprocessing is restricted to admin and PS team members'
     return True, None
 
 
@@ -1213,175 +1198,6 @@ def her_audit_log():
     return jsonify({'status': 'ok', 'entries': entries})
 
 
-# ─── Reprocessing ─────────────────────────────────────────────────
-# Re-triggers ingestion for utility files whose chunks got stuck mid-pipeline
-# (created but never picked up, or that failed processing). Replaces the
-# per-environment shell scripts ops/PS used to hand-edit before every run —
-# see reprocessing.py's module comment for the full background.
-
-@app.route('/api/reprocessing/pilots', methods=['GET'])
-@admin_or_ps_required
-def reprocessing_pilots():
-    """The pilot dropdown options for one environment — just {key, label},
-    never the underlying bucket names, so those can change in
-    reprocessing.py without touching the frontend."""
-    env = request.args.get('env', 'NA2')
-    if env not in REPROCESS_API_CONFIG:
-        return jsonify({'status': 'error', 'message': f'No config for env {env}'}), 400
-    return jsonify({'status': 'ok', 'pilots': get_reprocessing_pilot_configs(env)})
-
-
-@app.route('/api/reprocessing/run/start', methods=['POST'])
-@admin_or_ps_required
-def reprocessing_run_start():
-    """Starts a reprocessing run on a background thread — same
-    survives-a-reload/closed-tab pattern as HER Revocation's background runs
-    (see reprocessing.py's module comment and her_revocation.py's larger one
-    for the full rationale). Returns run_id right away; the frontend polls
-    GET /api/reprocessing/audit/run/<run_id> for progress."""
-    data = request.json or {}
-    role = session['user']['role']
-    ok, err = check_dispatch_permission(role, 'reprocessing', '')
-    if not ok:
-        return jsonify({'status': 'error', 'message': err}), 403
-
-    env = data.get('env', 'NA2')
-    if env not in REPROCESS_API_CONFIG:
-        return jsonify({'status': 'error', 'message': f'No API host configured for env {env} yet'}), 400
-
-    # Unlike HER Revocation, a reprocessing run usually isn't tied to a support
-    # ticket — optional here. reprocessing.start_audit_entry already defaults
-    # an empty ticket to '—' in the audit log, so there's nothing else to do
-    # for that case.
-    ticket_number = (data.get('ticket_number') or '').strip()
-
-    pilot_key = (data.get('pilot_key') or '').strip()
-    if not pilot_key:
-        return jsonify({'status': 'error', 'message': 'Pick a pilot/utility before starting a run'}), 400
-
-    pilot_id = (data.get('pilot_id') or '').strip()
-    if not pilot_id:
-        return jsonify({'status': 'error', 'message': 'A pilot ID is required'}), 400
-
-    # Reprocessing hits the same gbingestion API family HER Revocation's
-    # naapi2 host sits behind, under the same team-shared token — see
-    # reprocessing.py's module comment. If these ever need a separate token,
-    # this is the one line that changes.
-    token = get_her_revoke_token()
-    if not token:
-        log.error('Reprocessing run attempted with no shared access token set')
-        return jsonify({'status': 'error', 'message': 'No access token configured on the server — ask an admin to set today\'s token in HER Revocation'}), 500
-
-    try:
-        threads = max(1, int(data.get('threads', 2)))
-    except (TypeError, ValueError):
-        threads = 2
-    try:
-        batch_size = max(1, int(data.get('batch_size', 50)))
-    except (TypeError, ValueError):
-        batch_size = 50
-
-    actor = session['user']['email']
-    log.info(f'Reprocessing run started by {actor} — ticket={ticket_number} env={env} '
-             f'pilot_key={pilot_key} pilot_id={pilot_id} batch_size={batch_size} threads={threads}')
-    try:
-        run_id = start_reprocessing_background_run(
-            actor=actor, ticket=ticket_number, env=env, pilot_key=pilot_key, pilot_id=pilot_id,
-            token=token, threads=threads, batch_size=batch_size,
-        )
-    except ValueError as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 400
-    except Exception:
-        log.exception('Failed to start reprocessing run')
-        return jsonify({'status': 'error', 'message': 'Could not start run — check the pilot\'s S3 access/credentials, or the audit store may be unreachable'}), 502
-    return jsonify({'status': 'ok', 'run_id': run_id})
-
-
-@app.route('/api/reprocessing/run/<run_id>/stop', methods=['POST'])
-@admin_or_ps_required
-def reprocessing_run_stop(run_id):
-    """Same stop-or-reconcile pattern as HER Revocation's stop route — see
-    her_run_stop's docstring above for the full rationale."""
-    role = session['user']['role']
-    ok, err = check_dispatch_permission(role, 'reprocessing', '')
-    if not ok:
-        return jsonify({'status': 'error', 'message': err}), 403
-
-    if request_reprocessing_run_stop(run_id):
-        return jsonify({'status': 'ok'})
-
-    try:
-        reconciled = reconcile_reprocessing_orphaned_run(run_id)
-    except Exception:
-        log.exception('Failed to check/reconcile a possibly-orphaned reprocessing run')
-        return jsonify({'status': 'error', 'message': 'Could not check this run (audit store unreachable)'}), 502
-    if reconciled:
-        return jsonify({
-            'status': 'ok',
-            'reconciled': True,
-            'message': 'This run had already stopped running — most likely the server restarted while it was in progress. Marked as Interrupted.',
-        })
-    return jsonify({
-        'status': 'error',
-        'message': 'This run is not currently active on the server, and its row is not stuck on RUNNING — there may be nothing to stop.',
-    }), 404
-
-
-@app.route('/api/reprocessing/audit/run/<run_id>', methods=['GET'])
-@admin_or_ps_required
-def reprocessing_audit_run_get(run_id):
-    try:
-        entry = get_reprocessing_audit_entry(run_id)
-    except Exception:
-        log.exception('Failed to read reprocessing audit entry')
-        return jsonify({'status': 'error', 'message': 'Could not read audit log (store unreachable)'}), 502
-    if entry is None:
-        return jsonify({'status': 'error', 'message': 'Entry not found'}), 404
-    return jsonify({'status': 'ok', 'entry': entry, 'active': is_reprocessing_run_active(run_id)})
-
-
-@app.route('/api/reprocessing/audit', methods=['GET'])
-@admin_or_ps_required
-def reprocessing_audit_log():
-    ticket = request.args.get('ticket') or None
-    env    = request.args.get('env') or None
-    actor  = request.args.get('actor') or None
-    limit  = request.args.get('limit', 200)
-    try:
-        limit = int(limit)
-    except ValueError:
-        limit = 200
-    entries = get_reprocessing_audit_log(limit=limit, ticket=ticket, env=env, actor=actor)
-    return jsonify({'status': 'ok', 'entries': entries})
-
-
-@app.route('/api/reprocessing/audit/run/<run_id>', methods=['DELETE'])
-@admin_or_ps_required
-def reprocessing_audit_run_delete(run_id):
-    """Removes one Reprocessing History row — same Clear-link pattern as HER
-    Revocation's, re-checked server-side so a raw API call can't clear a row
-    the UI wouldn't have offered a Clear link for."""
-    try:
-        entries = get_reprocessing_audit_log(limit=1000)
-    except Exception:
-        log.exception('Failed to read reprocessing audit log before delete')
-        return jsonify({'status': 'error', 'message': 'Could not read audit log (store unreachable)'}), 502
-    target = next((e for e in entries if e.get('id') == run_id), None)
-    if target is None:
-        return jsonify({'status': 'error', 'message': 'Entry not found'}), 404
-    if (target.get('status') or '') not in REPROCESSING_CLEARABLE_STATUSES:
-        return jsonify({
-            'status': 'error',
-            'message': f"Only Terminated, Partial, Failed or Interrupted entries can be cleared (this one is {target.get('status')})",
-        }), 400
-    try:
-        delete_reprocessing_audit_entry(run_id)
-    except Exception:
-        log.exception('Failed to delete reprocessing audit entry')
-        return jsonify({'status': 'error', 'message': 'Could not update audit log (store unreachable)'}), 502
-    return jsonify({'status': 'ok'})
-
-
 if __name__ == '__main__':
     if LOCAL_NO_AUTH:
         print('\n  ⚠ OPSHUB_LOCAL_NO_AUTH is on — Google SSO is BYPASSED.')
@@ -1416,15 +1232,6 @@ if __name__ == '__main__':
             print('    of this process — marked as Interrupted in Revocation History.\n')
     except Exception:
         log.exception('Failed to check for orphaned HER Revocation runs at startup')
-
-    # Same reconciliation, for reprocessing runs.
-    try:
-        reconciled_count = reconcile_reprocessing_orphaned_runs_on_startup()
-        if reconciled_count:
-            print(f'  ⚠ Found {reconciled_count} reprocessing run(s) stuck on RUNNING from a previous instance')
-            print('    of this process — marked as Interrupted in Reprocessing History.\n')
-    except Exception:
-        log.exception('Failed to check for orphaned reprocessing runs at startup')
 
     # Surface CA/EU/na credential setup at startup rather than waiting for someone
     # to hit Dispatch and get a ProfileNotFound error — every named profile this
