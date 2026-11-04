@@ -36,16 +36,17 @@ spec:
           # plus sqs:SendMessage on whichever queues Aggregation/Disaggregation/
           # Rate Comparison dispatch to.
           #
-          # CA and EU (separate AWS accounts) also need CA_ROLE_ARN / EU_ROLE_ARN
-          # env vars (add to opshub-secrets) pointing at an IAM role in each of
-          # those accounts, with a trust policy allowing THIS pod's identity to
-          # assume it — server.py then reaches them via STS, no credentials file
-          # needed. NA2 disaggregation/rate_comparison similarly wants NA_ROLE_ARN
-          # if it's meant to run under a distinct role from the default identity.
-          # Without these set, server.py falls back to looking for a named AWS
-          # CLI profile ('ca'/'EU'/'na') instead, which needs its own credentials
-          # file mounted into the pod — that's the "ProfileNotFound" error if
-          # neither path is configured.
+          # Cross-account SQS (CA, EU): server.py assumes a role in the queue's own AWS
+          # account using THIS pod's role (sts:AssumeRole), then sends with the temporary
+          # credentials, which it refreshes automatically before they expire. Configure
+          # per environment as plain env vars (e.g. in opshub-secrets, or an `env:` block):
+          #   CA_DESTINATION_ROLE_ARN=arn:aws:iam::076900401824:role/CrossAccountSQSAccessRole
+          #   CA_DESTINATION_REGION=ca-central-1        # optional; defaults to ca-central-1
+          #   EU_DESTINATION_ROLE_ARN=arn:aws:iam::967871724166:role/<eu-role>
+          #   EU_DESTINATION_REGION=eu-central-1        # optional; defaults to eu-central-1
+          # The pod's role (prodna2-eks-nodegroup-role) needs sts:AssumeRole on those role
+          # ARNs, and each destination role must trust it. An environment with no role set
+          # sends with the pod's own role (same-account NA / NA2 queues).
           resources:
             requests:
               cpu: "100m"

@@ -17,10 +17,16 @@ this same directory (loaded automatically at startup):
                               Token" card) — that's stored in her_revocation.py's
                               .her_revoke_token.json, not here. This env var only matters
                               on a fresh install before anyone has pasted a token yet.
-    AWS credentials - nothing to configure here. SQS/S3 calls use the default AWS
-                              credential chain (in EKS, the pod's IAM role); the target region
-                              per environment comes from ENV_CONFIG. Queues in other AWS
-                              accounts (CA, EU) need that role granted access.
+    <ENV>_DESTINATION_ROLE_ARN - OPTIONAL, per environment (CA, EU, ...). IAM role in the queue's
+                              own AWS account that the app assumes (sts:AssumeRole, using the
+                              pod's own role) before sending, e.g.
+                              CA_DESTINATION_ROLE_ARN=arn:aws:iam::076900401824:role/CrossAccountSQSAccessRole
+                              Unset = send with the pod's own role (same-account queues, or a
+                              queue whose access policy already allows that role).
+    <ENV>_DESTINATION_REGION - OPTIONAL, overrides that environment's SQS region from ENV_CONFIG,
+                              e.g. CA_DESTINATION_REGION=ca-central-1
+    SQS_ROLE_SESSION_NAME   - OPTIONAL, STS session name (default OpsHubSQS)
+    SOURCE_AWS_REGION       - OPTIONAL, region used for the STS call (default AWS_REGION or us-east-1)
 
 Example .env file (create as `.env` next to server.py):
     GOOGLE_CLIENT_ID=123456789-abc.apps.googleusercontent.com
@@ -48,6 +54,9 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from functools import wraps
 import boto3
 from botocore.exceptions import ClientError
+from botocore.config import Config as BotoConfig
+from botocore.credentials import RefreshableCredentials
+from botocore.session import get_session as get_botocore_session
 import os
 import json
 import time
@@ -433,21 +442,30 @@ BC_DASHBOARD_CACHE_TTL  = 60            # seconds — avoids hitting S3 on every
 _bc_dashboard_cache = {'data': None, 'fetched_at': 0}
 
 
-# ─── AWS CREDENTIALS ─────────────────────────────────────────────
-# Credentials come from the default AWS credential chain — in EKS that is the IAM
-# role the pod already runs as. No named AWS CLI profile is used anywhere: a pod
-# has no ~/.aws profiles, which is what caused "ProfileNotFound: The config
-# profile (ca) could not be found".
+# ─── AWS CREDENTIALS / SQS CLIENTS ──────────────────────────────
+# SOURCE identity: the default AWS credential chain — in EKS, the IAM role the pod
+# runs as. No named AWS CLI profile is used anywhere (a pod has none; that caused
+# "ProfileNotFound"). `profile` stays an accepted-but-ignored argument so existing
+# call sites and the 'profile' keys in ENV_CONFIG keep working unchanged.
 #
-# `profile` is still accepted so existing call sites and the 'profile' keys in
-# ENV_CONFIG keep working unchanged, but it is intentionally ignored. The
-# destination region stays configurable per environment: it is passed in from
-# ENV_CONFIG and selects which regional SQS endpoint the client talks to (the
-# queue URL from build_queue_url also carries the target account ID).
+# CROSS-ACCOUNT SQS: queues in another AWS account (CA, EU) are reached by assuming
+# a role in THAT account with the source identity (sts:AssumeRole) and sending with
+# the temporary credentials. One deployment serves several destinations at once, so
+# this is configured PER ENVIRONMENT, not with a single global pair:
+#     <ENV>_DESTINATION_ROLE_ARN   e.g. CA_DESTINATION_ROLE_ARN=arn:aws:iam::076900401824:role/CrossAccountSQSAccessRole
+#     <ENV>_DESTINATION_REGION     optional; defaults to the region in ENV_CONFIG
+# An environment with no role configured keeps sending with the source identity
+# (same-account queues such as NA / NA2, or a queue whose access policy already
+# allows the source role). Only environments with a role configured use AssumeRole.
 #
-# For queues in a different AWS account (CA, EU) the pod's role must be granted
-# access to them (identity policy on the role + a resource policy on each queue),
-# otherwise SQS answers AccessDenied.
+# The temporary credentials are refreshable: botocore re-calls AssumeRole shortly
+# before they expire, so the cached client keeps working in a long-running service
+# without calling STS for every message.
+SOURCE_AWS_REGION = (os.environ.get('SOURCE_AWS_REGION') or os.environ.get('AWS_REGION')
+                     or os.environ.get('AWS_DEFAULT_REGION') or 'us-east-1')
+ROLE_SESSION_NAME = os.environ.get('SQS_ROLE_SESSION_NAME', 'OpsHubSQS')
+
+
 def _get_boto3_session(profile, region):
     return boto3.Session(region_name=region)
 
@@ -457,15 +475,114 @@ def get_s3_client():
     return session.client('s3')
 
 
+def _destination_role_arn(env):
+    return (os.environ.get(f'{env.upper()}_DESTINATION_ROLE_ARN') or '').strip() or None
+
+
+def _destination_region(env, cfg):
+    return (os.environ.get(f'{env.upper()}_DESTINATION_REGION') or '').strip() or cfg['region']
+
+
+def _sts_client(timeout, attempts):
+    # Source session: no profile — the default chain (the pod's IAM role in EKS).
+    return boto3.Session(region_name=SOURCE_AWS_REGION).client(
+        'sts', config=BotoConfig(connect_timeout=timeout, read_timeout=timeout,
+                                 retries={'max_attempts': attempts}))
+
+
+def _assume_destination_role(role_arn, region, env):
+    """One sts:AssumeRole call using the SOURCE identity. Returns the metadata dict that
+    botocore's RefreshableCredentials expects. Called when the client is first built and
+    again by botocore on every refresh, so the assumed identity is logged each time.
+    Never logs access keys, secret keys or session tokens."""
+    log.info(f'Assuming destination role for SQS ({env}): {role_arn} | destination SQS region: {region}')
+    try:
+        resp = _sts_client(timeout=10, attempts=3).assume_role(
+            RoleArn=role_arn, RoleSessionName=ROLE_SESSION_NAME)
+    except Exception as e:
+        log.error(f'AssumeRole failed for {env} ({role_arn}): {type(e).__name__}: {e}')
+        raise
+    creds = resp['Credentials']
+    log.info(f"SQS client initialized using assumed role: {resp['AssumedRoleUser']['Arn']} "
+             f"({env}, {region}; credentials expire {creds['Expiration'].isoformat()})")
+    return {
+        'access_key': creds['AccessKeyId'],
+        'secret_key': creds['SecretAccessKey'],
+        'token': creds['SessionToken'],
+        'expiry_time': creds['Expiration'].isoformat(),
+    }
+
+
+_xacct_sqs_clients = {}
+_xacct_lock = threading.Lock()
+
+
+def _get_cross_account_sqs_client(role_arn, region, env):
+    """Reusable, auto-refreshing SQS client for a destination account. Cached per
+    (role, region), so AGG, DISAGG and Rate Comparison for the same destination share
+    one assumed-role session. boto3 clients are thread-safe, and RefreshableCredentials
+    serializes its own refresh, so the dispatch thread pools can share it safely."""
+    key = (role_arn, region)
+    with _xacct_lock:
+        client = _xacct_sqs_clients.get(key)
+        if client is None:
+            credentials = RefreshableCredentials.create_from_metadata(
+                metadata=_assume_destination_role(role_arn, region, env),
+                refresh_using=lambda: _assume_destination_role(role_arn, region, env),
+                method='sts-assume-role',
+            )
+            bc_session = get_botocore_session()
+            bc_session._credentials = credentials   # standard way to plug in refreshable assume-role creds
+            client = boto3.Session(botocore_session=bc_session, region_name=region).client('sqs')
+            _xacct_sqs_clients[key] = client
+    return client
+
+
+_source_account_cache = {}
+_warned = set()
+
+
+def _source_account():
+    """Account the app itself runs in (one cached STS call; None if it can't be determined)."""
+    if 'v' not in _source_account_cache:
+        try:
+            _source_account_cache['v'] = _sts_client(timeout=5, attempts=1).get_caller_identity()['Account']
+        except Exception:
+            _source_account_cache['v'] = None
+    return _source_account_cache['v']
+
+
+def _warn_once(key, message):
+    if key not in _warned:
+        _warned.add(key)
+        log.warning(message)
+
+
 def get_sqs_client(script_type, env):
     cfg = ENV_CONFIG[script_type][env]
-    session = _get_boto3_session(cfg['profile'], cfg['region'])
-    return session.client('sqs')
+    region = _destination_region(env, cfg)
+    role_arn = _destination_role_arn(env)
+
+    if role_arn:
+        parts = role_arn.split(':')
+        if len(parts) > 4 and parts[4] != cfg['account']:
+            _warn_once(('mismatch', env),
+                       f"{env}_DESTINATION_ROLE_ARN is in account {parts[4]} but {env} queues are configured "
+                       f"for account {cfg['account']} — check both settings.")
+        return _get_cross_account_sqs_client(role_arn, region, env)
+
+    src = _source_account()
+    if src and src != cfg['account']:
+        _warn_once(('no-role', env),
+                   f"{env} queues are in account {cfg['account']} but this app runs as account {src} and "
+                   f"{env.upper()}_DESTINATION_ROLE_ARN is not set — sending with the source role, which only "
+                   f"works if the queue's access policy allows it.")
+    return _get_boto3_session(cfg['profile'], region).client('sqs')
 
 
 def build_queue_url(script_type, env, queue_name):
     cfg = ENV_CONFIG[script_type][env]
-    return f"https://sqs.{cfg['region']}.amazonaws.com/{cfg['account']}/{queue_name}"
+    return f"https://sqs.{_destination_region(env, cfg)}.amazonaws.com/{cfg['account']}/{queue_name}"
 
 
 # ─── MESSAGE BODY BUILDERS ──────────────────────────────────────
@@ -1204,9 +1321,16 @@ if __name__ == '__main__':
     except Exception:
         log.exception('Failed to check for orphaned HER Revocation runs at startup')
 
-    # Credentials: the default AWS credential chain (the pod's IAM role in EKS) for every environment.
-    print('  AWS credentials: default credential chain (the pod\'s IAM role) for every environment.')
-    print('  Queues in other AWS accounts (CA, EU) need that role granted cross-account SQS access.\n')
+    # SQS credentials per environment (no network calls here — just what the app will do).
+    print('  SQS credentials: source identity = the pod\'s IAM role (default credential chain, no profile).')
+    for _env in sorted({e for svc in ENV_CONFIG.values() for e in svc}):
+        _role = _destination_role_arn(_env)
+        if _role:
+            _region = os.environ.get(f'{_env}_DESTINATION_REGION') or 'region from ENV_CONFIG'
+            print(f'    {_env}: assumes {_role}  ({_region})')
+        else:
+            print(f'    {_env}: source role (same-account queues, or the queue policy allows it)')
+    print()
     print('\n  PS Internal Ops Dashboard')
     print('  http://localhost:8080\n')
     app.run(host='0.0.0.0', port=8080, debug=False)
