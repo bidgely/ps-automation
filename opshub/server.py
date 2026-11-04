@@ -17,14 +17,10 @@ this same directory (loaded automatically at startup):
                               Token" card) — that's stored in her_revocation.py's
                               .her_revoke_token.json, not here. This env var only matters
                               on a fresh install before anyone has pasted a token yet.
-    CA_ROLE_ARN, EU_ROLE_ARN, NA_ROLE_ARN - OPTIONAL, one per environment that needs
-                              cross-account AWS access (CA and EU live in separate AWS
-                              accounts; 'na' is used for NA2 disaggregation/rate_comparison).
-                              If set, this process assumes that IAM role via STS instead of
-                              needing a named AWS CLI profile — the Kubernetes-native way to
-                              reach another account with no credentials file required. See
-                              _get_boto3_session()'s comment further down for the full story,
-                              including the one-time IAM trust-policy setup this still needs.
+    AWS credentials - nothing to configure here. SQS/S3 calls use the default AWS
+                              credential chain (in EKS, the pod's IAM role); the target region
+                              per environment comes from ENV_CONFIG. Queues in other AWS
+                              accounts (CA, EU) need that role granted access.
 
 Example .env file (create as `.env` next to server.py):
     GOOGLE_CLIENT_ID=123456789-abc.apps.googleusercontent.com
@@ -437,48 +433,23 @@ BC_DASHBOARD_CACHE_TTL  = 60            # seconds — avoids hitting S3 on every
 _bc_dashboard_cache = {'data': None, 'fetched_at': 0}
 
 
-# ─── AWS CREDENTIALS PER ENVIRONMENT ────────────────────────────
-# CA and EU (and, for disaggregation/rate_comparison, the 'na' profile) live
-# in AWS accounts separate from this process's own default identity, so they
-# need their own credentials — this used to mean a named AWS CLI profile
-# ('ca' / 'EU' / 'na'), which requires a ~/.aws/config or ~/.aws/credentials
-# file with a matching [profile ...] section to exist wherever this runs.
-# That's awkward in Kubernetes: there's no such file by default, only
-# whatever IAM role the pod itself has (via IRSA or a node role) — which is
-# exactly the "ProfileNotFound: The config profile (ca) could not be found"
-# error this was hitting.
+# ─── AWS CREDENTIALS ─────────────────────────────────────────────
+# Credentials come from the default AWS credential chain — in EKS that is the IAM
+# role the pod already runs as. No named AWS CLI profile is used anywhere: a pod
+# has no ~/.aws profiles, which is what caused "ProfileNotFound: The config
+# profile (ca) could not be found".
 #
-# _get_boto3_session now tries TWO ways, in order, for any of these
-# environments:
-#   1. A <PROFILE>_ROLE_ARN env var (e.g. CA_ROLE_ARN, EU_ROLE_ARN,
-#      NA_ROLE_ARN) — if set, this process assumes that IAM role via STS
-#      using whatever credentials it already has (its own pod identity).
-#      This is the Kubernetes-native path: no credentials file anywhere,
-#      just one role ARN per environment as a Secret. The target role's
-#      trust policy needs to allow this process's own IAM identity to
-#      assume it — that's a one-time setup in AWS IAM, not something this
-#      code can create for you.
-#   2. A named AWS CLI profile (the original behavior) — kept as a fallback
-#      for local dev, or anywhere that still manages credentials that way.
-# If neither is configured, this raises the same ProfileNotFound error as
-# before — an honest failure rather than a silent wrong-account fallback.
+# `profile` is still accepted so existing call sites and the 'profile' keys in
+# ENV_CONFIG keep working unchanged, but it is intentionally ignored. The
+# destination region stays configurable per environment: it is passed in from
+# ENV_CONFIG and selects which regional SQS endpoint the client talks to (the
+# queue URL from build_queue_url also carries the target account ID).
+#
+# For queues in a different AWS account (CA, EU) the pod's role must be granted
+# access to them (identity policy on the role + a resource policy on each queue),
+# otherwise SQS answers AccessDenied.
 def _get_boto3_session(profile, region):
-    if not profile:
-        return boto3.Session(region_name=region)
-
-    role_arn = os.environ.get(f'{profile.upper()}_ROLE_ARN')
-    if role_arn:
-        sts = boto3.client('sts')
-        resp = sts.assume_role(RoleArn=role_arn, RoleSessionName='opshub')
-        creds = resp['Credentials']
-        return boto3.Session(
-            aws_access_key_id=creds['AccessKeyId'],
-            aws_secret_access_key=creds['SecretAccessKey'],
-            aws_session_token=creds['SessionToken'],
-            region_name=region,
-        )
-
-    return boto3.Session(profile_name=profile, region_name=region)
+    return boto3.Session(region_name=region)
 
 
 def get_s3_client():
@@ -1233,26 +1204,9 @@ if __name__ == '__main__':
     except Exception:
         log.exception('Failed to check for orphaned HER Revocation runs at startup')
 
-    # Surface CA/EU/na credential setup at startup rather than waiting for someone
-    # to hit Dispatch and get a ProfileNotFound error — every named profile this
-    # app actually uses, across every env config, gets checked here.
-    all_profiles = sorted({
-        cfg['profile']
-        for service in ENV_CONFIG.values()
-        for cfg in service.values()
-        if cfg.get('profile')
-    })
-    if all_profiles:
-        print('  AWS credentials per environment:')
-        for p in all_profiles:
-            role_arn = os.environ.get(f'{p.upper()}_ROLE_ARN')
-            if role_arn:
-                print(f'    {p}: via STS role assumption ({role_arn})')
-            else:
-                print(f'    {p}: ⚠ no {p.upper()}_ROLE_ARN set — falling back to a named AWS CLI profile')
-                print(f'       called "{p}", which needs a ~/.aws/config or ~/.aws/credentials')
-                print(f'       file with that profile to exist wherever this process runs.')
-        print()
+    # Credentials: the default AWS credential chain (the pod's IAM role in EKS) for every environment.
+    print('  AWS credentials: default credential chain (the pod\'s IAM role) for every environment.')
+    print('  Queues in other AWS accounts (CA, EU) need that role granted cross-account SQS access.\n')
     print('\n  PS Internal Ops Dashboard')
     print('  http://localhost:8080\n')
     app.run(host='0.0.0.0', port=8080, debug=False)
