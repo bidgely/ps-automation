@@ -1268,6 +1268,15 @@
               <div class="toggle-knob"></div>
             </div>
           </div>
+          <div class="form-group" style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;margin-bottom:0;">
+            <span>
+              <span class="form-label" style="margin-bottom:2px;">Retry = false</span>
+              <div style="font-size:11px;color:var(--muted);">Adds <code style="font-family:var(--mono);font-size:11px;color:var(--accent2);">retry=false</code> to the call — turn off to leave the parameter out</div>
+            </span>
+            <div class="toggle-switch on" id="her-retry-toggle" onclick="herToggleRetry()">
+              <div class="toggle-knob"></div>
+            </div>
+          </div>
         </div>
 
         <!-- EXECUTION PARAMS -->
@@ -1293,6 +1302,40 @@
             </div>
 
             <div id="her-id-file-section" style="display:none;">
+              <div id="her-sb-card" style="margin-bottom:14px;padding:12px 14px;background:rgba(56,232,198,0.04);border:1px solid rgba(56,232,198,0.18);border-radius:10px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px;flex-wrap:wrap;">
+                  <label class="form-label" style="margin-bottom:0;color:var(--accent2);letter-spacing:.04em;">Fetch IDs from Starburst</label>
+                  <span id="her-sb-status" style="font-size:11px;font-family:var(--mono);color:var(--muted);"></span>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+                  <div style="flex:1;min-width:110px;">
+                    <label class="form-label" style="font-size:10.5px;">Pilot ID</label>
+                    <input class="form-input" type="text" id="her-sb-pilot" placeholder="e.g. 10068" style="font-family:var(--mono);font-size:12px;">
+                  </div>
+                  <div>
+                    <label class="form-label" style="font-size:10.5px;">From (UTC)</label>
+                    <div style="display:flex;gap:4px;">
+                      <input class="form-input" type="date" id="her-sb-start" style="font-family:var(--mono);font-size:12px;">
+                      <input class="form-input" type="time" id="her-sb-start-time" title="Optional start time (UTC) — blank = start of day" style="width:96px;font-family:var(--mono);font-size:12px;">
+                    </div>
+                  </div>
+                  <div>
+                    <label class="form-label" style="font-size:10.5px;">To (UTC, inclusive)</label>
+                    <div style="display:flex;gap:4px;">
+                      <input class="form-input" type="date" id="her-sb-end" style="font-family:var(--mono);font-size:12px;">
+                      <input class="form-input" type="time" id="her-sb-end-time" title="Optional end time (UTC) — blank = end of day" style="width:96px;font-family:var(--mono);font-size:12px;">
+                    </div>
+                  </div>
+                  <button class="btn btn-outline btn-sm" id="her-sb-fetch-btn" onclick="herStarburstFetch()">Fetch</button>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+                  <input class="form-input" type="text" id="her-sb-user" autocomplete="off" onchange="herStarburstRefreshStatus()" placeholder="Your Starburst user, e.g. you@bidgely.com/business_user" style="flex:2;min-width:220px;font-family:var(--mono);font-size:12px;">
+                  <input class="form-input" type="password" id="her-sb-pass" autocomplete="new-password" onchange="herStarburstRefreshStatus()" placeholder="Starburst password" style="flex:1;min-width:140px;font-family:var(--mono);font-size:12px;" onkeydown="if(event.key==='Enter')herStarburstFetch()">
+                </div>
+                <div style="font-size:11px;color:var(--muted);margin-top:6px;">Use your own Starburst login (the password you set from the invite email, not Google SSO). It's sent only for this lookup — never saved or logged — so the query runs with your own Starburst access. Leave both blank to use the shared account, if the server has one.</div>
+                <div id="her-sb-result" style="display:none;margin-top:10px;padding:8px 12px;background:#080a0f;border:1px solid var(--border);border-radius:6px;font-family:var(--mono);font-size:11px;color:var(--muted);"></div>
+                <div style="font-size:11px;color:var(--muted);margin-top:8px;">Finds HER notifications for that pilot that are GENERATED and not already REVOKED, in the environment selected above. Times are optional (UTC): leave them blank for whole days, or set them to narrow the range — the To time includes that whole minute. This only looks them up — you review the count, load them into the list, and nothing is revoked until you press the normal start button.</div>
+              </div>
               <div style="display:flex;gap:8px;align-items:center;">
                 <input class="form-input" type="text" id="her-param-filename" placeholder="notification_ids.csv" style="flex:1;font-family:var(--mono);font-size:12px;" onchange="herUpdatePreview()">
                 <button class="btn btn-outline btn-sm" onclick="document.getElementById('her-file-input').click()">Browse</button>
@@ -2033,7 +2076,7 @@ function switchTab(tab) {
   document.getElementById(`page-${tab}`).classList.add('active');
   if (tab === 'admin') { fetchRunLog().then(() => { updateAdminStats(); renderAdminTable(); }); }
   if (tab === 'bctracker' && !bctData) loadBcTracker();
-  if (tab === 'herrevoke') { herLoadTokenStatus(); herLoadAuditLog(); herUpdateStats(); }
+  if (tab === 'herrevoke') { herLoadTokenStatus(); herLoadAuditLog(); herUpdateStats(); herStarburstRefreshStatus(); }
 }
 
 // ─── SHARED BATCH HELPER ───────────────────────────────────────
@@ -3204,11 +3247,146 @@ const HER_ENV_CONFIG = {
 
 let herCurrentEnv = 'NA2';
 let herForcedRevoke = true;
+let herRetryFalse = true;   // adds retry=false to the revoke call (default on = what it always sent)
 let herIdMode = 'single';   // 'single' | 'file'
 let herLoadedIds = [];      // parsed from uploaded file
 let herCurrentFileSignature = null; // identifies the uploaded file for checkpoint save/resume — null for a synthetic list (e.g. loaded via "Retry Failed")
 let herLastCheckpoint = null;       // the checkpoint fetched for the currently-loaded file, if any
 let herNotifyPermissionAsked = false;
+
+// ── Starburst lookup ─────────────────────────────────────────────
+// Fetches candidate notification IDs, shows a count + sample, and only loads
+// them into the revoke list (herLoadedIds) when the operator clicks "Load".
+// Same shape as the "Retry Failed" loader — a synthetic list, so no checkpoint
+// signature. Revoking still requires the normal start button.
+let herSbPending = null;
+let herSbLast = null;   // most recent fetch, kept after loading so the validation CSV can still be downloaded
+
+let herSbStatusSeq = 0;   // ignores a slow check if the env or login changed meanwhile
+
+// Status line: with a personal login typed in, actually connects (SELECT 1) and
+// reports "connected as ..." or the error; otherwise says whether the server has
+// a shared account for this environment. Re-runs when the env or login changes.
+async function herStarburstRefreshStatus() {
+  const el = document.getElementById('her-sb-status');
+  if (!el) return;
+  const seq = ++herSbStatusSeq;
+  const env = herCurrentEnv;
+  const user = (document.getElementById('her-sb-user')?.value || '').trim();
+  const pass = document.getElementById('her-sb-pass')?.value || '';
+  try {
+    if (user && pass) {
+      el.innerHTML = `<span style="color:var(--muted);">● checking ${herEscapeAttr(env)} login...</span>`;
+      const resp = await fetch('/api/her/starburst/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ env, starburst_user: user, starburst_password: pass }),
+      });
+      const data = await resp.json();
+      if (seq !== herSbStatusSeq) return;
+      el.innerHTML = (resp.ok && data.status === 'ok')
+        ? `<span style="color:var(--success);">● ${herEscapeAttr(env)} connected</span> as ${herEscapeAttr(data.user)} · ${herEscapeAttr(data.catalog)}`
+        : `<span style="color:var(--danger);">● ${herEscapeAttr(env)} login failed</span> — ${herEscapeAttr((data.message || 'HTTP ' + resp.status).slice(0, 220))}`;
+      return;
+    }
+    const resp = await fetch('/api/her/starburst/status', { credentials: 'same-origin' });
+    const data = await resp.json();
+    if (seq !== herSbStatusSeq) return;
+    const info = data.status === 'ok' ? data.envs[env] : null;
+    if (!info) { el.textContent = ''; return; }
+    el.innerHTML = info.configured
+      ? `<span style="color:var(--success);">● ${env}: shared account set</span> · ${info.catalog}`
+      : `<span style="color:var(--warn);">● ${env}: enter your Starburst login below</span> · ${info.catalog}`;
+  } catch (e) { if (seq === herSbStatusSeq) el.textContent = ''; }
+}
+
+async function herStarburstFetch() {
+  const pilot = document.getElementById('her-sb-pilot').value.trim();
+  const start = document.getElementById('her-sb-start').value;
+  const end = document.getElementById('her-sb-end').value;
+  const startTime = document.getElementById('her-sb-start-time').value;
+  const endTime = document.getElementById('her-sb-end-time').value;
+  const out = document.getElementById('her-sb-result');
+  const btn = document.getElementById('her-sb-fetch-btn');
+  if (!pilot || !start || !end) { alert('Enter a pilot ID and both dates first.'); return; }
+  herSbPending = null;
+  out.style.display = 'block';
+  out.textContent = 'Querying Starburst...';
+  btn.disabled = true;
+  try {
+    const resp = await fetch('/api/her/starburst/fetch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        env: herCurrentEnv, pilot_id: pilot, start_date: start, end_date: end,
+        start_time: startTime || undefined, end_time: endTime || undefined,
+        starburst_user: document.getElementById('her-sb-user').value.trim() || undefined,
+        starburst_password: document.getElementById('her-sb-pass').value || undefined,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.status !== 'ok') {
+      out.innerHTML = `<span style="color:var(--danger);">${herEscapeAttr(data.message || ('HTTP ' + resp.status))}</span>`;
+      return;
+    }
+    if (!data.count) {
+      out.innerHTML = 'No GENERATED, un-revoked HER notifications found for that pilot and date range.';
+      return;
+    }
+    const rangeLabel = `${start}${startTime ? ' ' + startTime : ''} → ${end}${endTime ? ' ' + endTime : ''}`;
+    herSbPending = { ids: data.ids, userIds: data.user_ids || [], pilot, start, end, rangeLabel,
+                     fileTag: `${start}${startTime ? 'T' + startTime.replace(':', '') : ''}_to_${end}${endTime ? 'T' + endTime.replace(':', '') : ''}` };
+    herSbLast = herSbPending;
+    const sample = data.ids.slice(0, 3).map((i, n) =>
+      `<div>${herEscapeAttr(i)}<span style="color:var(--muted);"> · user ${herEscapeAttr((data.user_ids || [])[n] || '—')}</span></div>`).join('');
+    out.innerHTML = `<div style="color:var(--accent2);">${data.count.toLocaleString()} notification(s) found · pilot ${herEscapeAttr(pilot)} · ${rangeLabel} UTC · ${herCurrentEnv}</div>`
+      + sample + (data.count > 3 ? `<div>... and ${(data.count - 3).toLocaleString()} more</div>` : '')
+      + `<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">`
+      + `<button class="btn btn-outline btn-sm" onclick="herStarburstLoad()">Load ${data.count.toLocaleString()} into the list</button>`
+      + `<button class="btn btn-outline btn-sm" onclick="herStarburstDownload()">⬇ Download with user UUIDs (to validate)</button></div>`
+      + `<div style="margin-top:6px;">Only the notification IDs are loaded for revoking — the user UUIDs are just for checking.</div>`;
+  } catch (err) {
+    out.innerHTML = `<span style="color:var(--danger);">Request failed: ${herEscapeAttr(err.message)}</span>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function herStarburstLoad() {
+  if (!herSbPending) return;
+  const { ids, pilot, start, end, rangeLabel, fileTag } = herSbPending;
+  herLoadedIds = ids.slice();
+  herCurrentFileSignature = null;
+  document.getElementById('her-resume-card').style.display = 'none';
+  herLastCheckpoint = null;
+  document.getElementById('her-param-filename').value = `starburst_${pilot}_${fileTag}.csv`;
+  document.getElementById('her-param-skip').value = 0;
+  const preview = document.getElementById('her-id-file-preview');
+  preview.style.display = 'block';
+  preview.innerHTML = herLoadedIds.slice(0, 5).map(l => `<div>${herEscapeAttr(l)}</div>`).join('')
+    + `<div style="color:var(--accent);margin-top:2px;">${herLoadedIds.length.toLocaleString()} ID(s) loaded from Starburst (pilot ${herEscapeAttr(pilot)}, ${rangeLabel} UTC) — review, then start the run</div>`;
+  herSbPending = null;
+  document.getElementById('her-sb-result').innerHTML =
+    `<div style="color:var(--accent2);">${ids.length.toLocaleString()} notification ID(s) loaded into the list (user UUIDs not included).</div>`
+    + `<button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="herStarburstDownload()">⬇ Download with user UUIDs (to validate)</button>`;
+  herUpdatePreview();
+}
+
+// Validation aid only: notification_id,user_id for the last fetch. Not what gets revoked.
+function herStarburstDownload() {
+  const f = herSbLast;
+  if (!f) return;
+  const rows = ['notification_id,user_id'].concat(f.ids.map((id, n) => `${id},${f.userIds[n] || ''}`));
+  const blob = new Blob([rows.join('\n') + '\n'], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `starburst_${f.pilot}_${f.fileTag}_with_user_ids.csv`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+}
 
 // ── Revoke access token (admin-managed, write-only) ─────────────
 function herFormatTokenStatus(data) {
@@ -3462,6 +3640,7 @@ function herSelectEnv(el, env) {
   el.classList.add('active');
   herCurrentEnv = env;
   herUpdatePreview();
+  herStarburstRefreshStatus();
 }
 
 // Same as herSelectEnv, but driven by the env code alone (e.g. from a "Retry
@@ -3483,6 +3662,12 @@ function herSetIdMode(mode) {
 function herToggleForced() {
   herForcedRevoke = !herForcedRevoke;
   document.getElementById('her-forced-toggle').classList.toggle('on', herForcedRevoke);
+  herUpdatePreview();
+}
+
+function herToggleRetry() {
+  herRetryFalse = !herRetryFalse;
+  document.getElementById('her-retry-toggle').classList.toggle('on', herRetryFalse);
   herUpdatePreview();
 }
 
@@ -3609,7 +3794,7 @@ function herUpdatePreview() {
   const idForPreview = herIdMode === 'single'
     ? (document.getElementById('her-param-id-single')?.value.trim() || '{notification_id}')
     : (herLoadedIds[herSkipCount] || herLoadedIds[0] || '{notification_id}');
-  const url = `http://${host}/2.1/notifications-revoke/notifications/${idForPreview}?forcedRevoke=${herForcedRevoke}&retry=false&access_token=***`;
+  const url = `http://${host}/2.1/notifications-revoke/notifications/${idForPreview}?forcedRevoke=${herForcedRevoke}${herRetryFalse ? '&retry=false' : ''}&access_token=***`;
   const herRemainingCount = Math.max(0, herLoadedIds.length - herSkipCount);
   const lines = [
     `POST ${url}`,
@@ -3713,6 +3898,7 @@ async function herDispatchRun() {
   appendLog(`[INFO]  Environment: ${herCurrentEnv}`);
   appendLog(`[INFO]  Mode: ${herIdMode === 'single' ? `single ID — ${ids[0]}` : `file — ${ids.length} record(s)${skipCount ? ` (skipped first ${skipCount} of ${herLoadedIds.length})` : ''}`}`);
   appendLog(`[INFO]  forcedRevoke: ${herForcedRevoke}`);
+  appendLog(`[INFO]  retry=false: ${herRetryFalse ? 'sent' : 'omitted'}`);
   appendLog(`[INFO]  Batching: ${ids.length} record(s) into ~${approxBatches} batch(es) of up to ${batchSize}, ${threads} thread(s) each`);
   appendLog(`[INFO]  This run executes on the server, not this tab — reloading or closing this page won't stop it. Revocation History below tracks it either way.`);
   setProgress(0, 'Starting…');
@@ -3732,6 +3918,7 @@ async function herDispatchRun() {
         ticket_number: ticketNumber,
         notification_ids: ids,
         forced_revoke: herForcedRevoke,
+        retry_false: herRetryFalse,
         threads,
         batch_size: batchSize,
         file_signature: herIdMode === 'file' ? herCurrentFileSignature : null,

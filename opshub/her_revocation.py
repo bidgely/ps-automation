@@ -128,18 +128,22 @@ def get_env_token():
     return os.environ.get('HER_REVOKE_ACCESS_TOKEN', '')
 
 
-def build_revoke_url(notification_id, token, env=DEFAULT_ENV, forced_revoke=True):
+def build_revoke_url(notification_id, token, env=DEFAULT_ENV, forced_revoke=True, retry_false=True):
     if env not in REVOKE_API_CONFIG:
         raise ValueError(f"No revoke host configured for env '{env}' yet")
     host = REVOKE_API_CONFIG[env]['host']
     forced = 'true' if forced_revoke else 'false'
+    # retry_false=True (the default, and what this always sent before the option
+    # existed) adds retry=false to the call; False leaves the parameter off
+    # entirely so the API applies its own default.
+    retry_param = '&retry=false' if retry_false else ''
     return (
         f'http://{host}/2.1/notifications-revoke/notifications/{notification_id}'
-        f'?forcedRevoke={forced}&retry=false&access_token={token}'
+        f'?forcedRevoke={forced}{retry_param}&access_token={token}'
     )
 
 
-def revoke_notification(notification_id, token, env=DEFAULT_ENV, forced_revoke=True, retry_once=True, timeout=30):
+def revoke_notification(notification_id, token, env=DEFAULT_ENV, forced_revoke=True, retry_once=True, timeout=30, retry_false=True):
     """POSTs a single revoke call; on a non-200 response or network error, retries
     once before giving up. Returns (ok, status_or_error, body_snippet): the HTTP
     status code (or a short error string if the request itself failed), plus up
@@ -148,7 +152,7 @@ def revoke_notification(notification_id, token, env=DEFAULT_ENV, forced_revoke=T
     correct, vs. something that actually needs attention — instead of just a
     bare status code. Never includes the token in what it returns — safe to log
     or write to a file."""
-    url = build_revoke_url(notification_id, token, env, forced_revoke)
+    url = build_revoke_url(notification_id, token, env, forced_revoke, retry_false)
     attempts = 2 if retry_once else 1
     last_status = None
     last_body = ''
@@ -202,7 +206,7 @@ def _looks_already_done(status, body):
     return any(p in body_l for p in ALREADY_DONE_PHRASES)
 
 
-def revoke_many(notification_ids, token, env=DEFAULT_ENV, forced_revoke=True, threads=2):
+def revoke_many(notification_ids, token, env=DEFAULT_ENV, forced_revoke=True, threads=2, retry_false=True):
     """Revokes a list of notification IDs concurrently (bounded by `threads`).
     Returns {'sent': [...], 'failed': [...], 'already_done': [...]} — 'sent'
     entries have {notification_id, status}; 'failed' entries have
@@ -215,7 +219,7 @@ def revoke_many(notification_ids, token, env=DEFAULT_ENV, forced_revoke=True, th
     results = {'sent': [], 'failed': [], 'already_done': []}
 
     def _one(notification_id):
-        ok, status, body = revoke_notification(notification_id, token, env, forced_revoke)
+        ok, status, body = revoke_notification(notification_id, token, env, forced_revoke, retry_false=retry_false)
         return notification_id, ok, status, body
 
     with ThreadPoolExecutor(max_workers=max(1, threads)) as ex:
@@ -694,7 +698,7 @@ AUTO_PAUSE_THRESHOLD = 5
 
 
 def _run_worker(run_id, stop_event, notification_ids, token, env, forced_revoke,
-                 threads, batch_size, ticket, file_signature, skip_count):
+                 threads, batch_size, ticket, file_signature, skip_count, retry_false=True):
     total = len(notification_ids)
     batch_size = max(1, int(batch_size or total or 1))
     batches = [notification_ids[i:i + batch_size] for i in range(0, total, batch_size)]
@@ -715,7 +719,8 @@ def _run_worker(run_id, stop_event, notification_ids, token, env, forced_revoke,
 
             batch_added_new_failures = False
             try:
-                results = revoke_many(batch_ids, token, env=env, forced_revoke=forced_revoke, threads=threads)
+                results = revoke_many(batch_ids, token, env=env, forced_revoke=forced_revoke, threads=threads,
+                                      retry_false=retry_false)
             except Exception:
                 log.exception(f'HER background run {run_id} — batch {b + 1}/{len(batches)} raised; counting all as failed')
                 total_failed += len(batch_ids)
@@ -821,7 +826,7 @@ def _run_worker(run_id, stop_event, notification_ids, token, env, forced_revoke,
 
 
 def start_background_run(actor, ticket, env, notification_ids, token, forced_revoke=True,
-                          threads=2, batch_size=500, file_signature=None, skip_count=0):
+                          threads=2, batch_size=500, file_signature=None, skip_count=0, retry_false=True):
     """Starts a multi-batch revoke run on a background thread inside this
     process and returns its run_id immediately. The caller (the ops-hub
     /api/her/run/start route) hands run_id back to the browser, which polls
@@ -836,7 +841,7 @@ def start_background_run(actor, ticket, env, notification_ids, token, forced_rev
     t = threading.Thread(
         target=_run_worker,
         args=(run_id, stop_event, notification_ids, token, env, forced_revoke,
-              threads, batch_size, ticket, file_signature, skip_count),
+              threads, batch_size, ticket, file_signature, skip_count, retry_false),
         daemon=True,
         name=f'her-revoke-{run_id[:8]}',
     )
