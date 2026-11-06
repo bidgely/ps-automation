@@ -3261,6 +3261,7 @@ let herNotifyPermissionAsked = false;
 // signature. Revoking still requires the normal start button.
 let herSbPending = null;
 let herSbLast = null;   // most recent fetch, kept after loading so the validation CSV can still be downloaded
+let herSbLoadedEnv = null;   // environment the IDs currently in the list were fetched from (null = not from Starburst)
 
 let herSbStatusSeq = 0;   // ignores a slow check if the env or login changed meanwhile
 
@@ -3336,7 +3337,7 @@ async function herStarburstFetch() {
       return;
     }
     const rangeLabel = `${start}${startTime ? ' ' + startTime : ''} → ${end}${endTime ? ' ' + endTime : ''}`;
-    herSbPending = { ids: data.ids, userIds: data.user_ids || [], pilot, start, end, rangeLabel,
+    herSbPending = { env: herCurrentEnv, ids: data.ids, userIds: data.user_ids || [], pilot, start, end, rangeLabel,
                      fileTag: `${start}${startTime ? 'T' + startTime.replace(':', '') : ''}_to_${end}${endTime ? 'T' + endTime.replace(':', '') : ''}` };
     herSbLast = herSbPending;
     const sample = data.ids.slice(0, 3).map((i, n) =>
@@ -3356,7 +3357,16 @@ async function herStarburstFetch() {
 
 function herStarburstLoad() {
   if (!herSbPending) return;
+  // Safety: these IDs belong to the environment they were fetched in. Never load
+  // them while a different environment is selected (the revoke goes to the selected one).
+  if (herSbPending.env !== herCurrentEnv) {
+    herSbPending = null;
+    document.getElementById('her-sb-result').innerHTML =
+      '<span style="color:var(--danger);">Environment changed since this fetch — fetch again for ' + herEscapeAttr(herCurrentEnv) + '.</span>';
+    return;
+  }
   const { ids, pilot, start, end, rangeLabel, fileTag } = herSbPending;
+  herSbLoadedEnv = herCurrentEnv;
   herLoadedIds = ids.slice();
   herCurrentFileSignature = null;
   document.getElementById('her-resume-card').style.display = 'none';
@@ -3638,7 +3648,23 @@ async function herSaveToken() {
 function herSelectEnv(el, env) {
   document.querySelectorAll('#her-env-selector .env-btn').forEach(b => b.classList.remove('active'));
   el.classList.add('active');
+  const envChanged = herCurrentEnv !== env;
   herCurrentEnv = env;
+  if (envChanged) {
+    // A Starburst fetch / loaded list belongs to the environment it came from — drop it
+    // so IDs from one environment can never be revoked against another.
+    herSbPending = null;
+    const sbOut = document.getElementById('her-sb-result');
+    if (sbOut) { sbOut.innerHTML = ''; sbOut.style.display = 'none'; }
+    if (herSbLoadedEnv && herSbLoadedEnv !== env) {
+      herLoadedIds = [];
+      herSbLoadedEnv = null;
+      const pv = document.getElementById('her-id-file-preview');
+      if (pv) { pv.innerHTML = ''; pv.style.display = 'none'; }
+      const fn = document.getElementById('her-param-filename');
+      if (fn) fn.value = '';
+    }
+  }
   herUpdatePreview();
   herStarburstRefreshStatus();
 }
@@ -3691,6 +3717,7 @@ function herHandleFile(e) {
   reader.onload = (ev) => {
     const lines = ev.target.result.split('\n').map(l => l.trim()).filter(Boolean);
     herLoadedIds = [...new Set(lines)]; // de-dupe, same as the old script's pandas unique()
+    herSbLoadedEnv = null;   // a manual upload is not tied to a Starburst fetch
     const preview = document.getElementById('her-id-file-preview');
     preview.style.display = 'block';
     const shown = herLoadedIds.slice(0, 5);
@@ -3759,6 +3786,7 @@ async function herRetryFailedIds(runId, ticket, env) {
       return;
     }
     herLoadedIds = data.entries.map(en => en.notification_id).filter(Boolean);
+    herSbLoadedEnv = null;
     herCurrentFileSignature = null; // synthetic list, not a real uploaded file — no checkpoint tracking
     document.getElementById('her-resume-card').style.display = 'none';
     herLastCheckpoint = null;
