@@ -34,7 +34,13 @@ spec:
           #   - bidgely-support-ps/opshub/her_revocation_audit.json (HER Revocation audit log)
           #   - bidgely-support-ps/scripts/bc_dashboard_final_status.json (BC Schedule Tracker; read-only is enough)
           # plus sqs:SendMessage on whichever queues Aggregation/Disaggregation/
-          # Rate Comparison dispatch to.
+          # Rate Comparison dispatch to, and sns:Publish on the NSM Disagg topics
+          # (Disaggregation tab, Disagg Type = NSM):
+          #   arn:aws:sns:us-east-1:857283459404:NSMDisaggReadyUsers-prod-na*      (NA, NA2 — pod role)
+          #   arn:aws:sns:ca-central-1:076900401824:NSMDisaggReadyUsers-prod-ca*   (CA — CA destination role)
+          #   arn:aws:sns:eu-central-1:967871724166:NSMDisaggReadyUsers-prod-eu*   (EU — EU destination role)
+          # CA/EU publish through the same <ENV>_DESTINATION_ROLE_ARN as their SQS
+          # dispatch, so that role needs sns:Publish added alongside its SQS access.
           #
           # Cross-account SQS (CA, EU): server.py assumes a role in the queue's own AWS
           # account using THIS pod's role (sts:AssumeRole), then sends with the temporary

@@ -801,7 +801,7 @@
   <div class="page" id="page-disagg">
     <div class="page-header">
       <div class="page-title">Disaggregation Re-Run</div>
-      <div class="page-sub">Configure environment, queue and parameters — dispatches gbTempDataReadyEvent to SQS</div>
+      <div class="page-sub" id="d-page-sub">Configure environment, queue and parameters — dispatches gbTempDataReadyEvent to SQS</div>
     </div>
 
     <div class="card" style="margin-bottom:20px;border-color:rgba(245,166,35,0.3);">
@@ -838,7 +838,14 @@
       <div>
         <!-- ENV + QUEUE -->
         <div class="card">
-          <div class="card-title">Environment & Queue</div>
+          <div class="card-title" id="d-env-card-title">Environment & Queue</div>
+          <div class="form-group">
+            <label class="form-label">Disagg Type</label>
+            <div style="display:flex;gap:8px;">
+              <div class="mode-pill active" id="d-type-pyami" onclick="dSetDisaggType('pyami')">PyAMI (SQS)</div>
+              <div class="mode-pill" id="d-type-nsm" onclick="dSetDisaggType('nsm')">NSM (SNS)</div>
+            </div>
+          </div>
           <div class="form-group">
             <label class="form-label">Environment</label>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;" id="d-env-selector">
@@ -861,7 +868,7 @@
             </div>
           </div>
           <div class="form-group">
-            <label class="form-label">SQS Queue</label>
+            <label class="form-label" id="d-queue-label">SQS Queue</label>
             <select class="form-select" id="d-queue-select" onchange="dUpdatePreview()"></select>
             <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:5px;" id="d-queue-url-display"></div>
           </div>
@@ -876,9 +883,17 @@
               <label class="form-label">Threads</label>
               <input class="form-input" type="number" id="d-param-threads" value="2" min="1" max="20" onchange="dUpdatePreview()">
             </div>
-            <div class="form-group" style="margin-bottom:0;">
+            <div class="form-group" style="margin-bottom:0;" id="d-hid-group">
               <label class="form-label">Home Ordinal</label>
               <input class="form-input" type="number" id="d-param-hid" value="1" min="1" onchange="dUpdatePreview()">
+            </div>
+            <div class="form-group" style="margin-bottom:0;display:none;" id="d-mtype-group">
+              <label class="form-label">MTYPE</label>
+              <select class="form-select" id="d-param-mtype" onchange="dUpdatePreview()">
+                <option value="GAS">GAS</option>
+                <option value="ELECTRIC">ELECTRIC</option>
+                <option value="WATER">WATER</option>
+              </select>
             </div>
           </div>
 
@@ -920,11 +935,12 @@
             <div id="d-time-manual-section">
               <div class="grid-2">
                 <div class="form-group" style="margin-bottom:0;">
-                  <label class="form-label">Start Time (epoch ms)</label>
+                  <label class="form-label" id="d-start-label">Start Time (epoch ms)</label>
                   <input class="form-input" type="number" id="d-param-starttime" placeholder="e.g. 1777277350" onchange="dUpdatePreview()">
+                  <div style="font-size:11px;color:var(--muted);margin-top:4px;display:none;" id="d-start-hint">0 = system default (last 13 months)</div>
                 </div>
                 <div class="form-group" style="margin-bottom:0;">
-                  <label class="form-label">End Time (epoch ms)</label>
+                  <label class="form-label" id="d-end-label">End Time (epoch ms)</label>
                   <input class="form-input" type="number" id="d-param-endtime" placeholder="e.g. 1779955750" onchange="dUpdatePreview()">
                 </div>
               </div>
@@ -933,9 +949,9 @@
             <div id="d-time-perrow-section" style="display:none;">
               <div style="padding:10px 14px;background:rgba(56,232,198,0.06);border:1px solid rgba(56,232,198,0.2);border-radius:6px;font-size:12px;color:var(--accent2);font-family:var(--mono);line-height:1.8;">
                 <div style="font-weight:500;margin-bottom:4px;">Expected file format:</div>
-                <div style="color:var(--muted);">{uuid},{startTs},{endTs}</div>
-                <div style="color:var(--muted);">e.g. a1b2c3d4...,1700000000000,1702678400000</div>
-                <div style="margin-top:8px;color:var(--muted);font-size:11px;">Maps to: starttime = resultone[1] · endtime = resultone[2]</div>
+                <div style="color:var(--muted);" id="d-perrow-format">{uuid},{startTs},{endTs}</div>
+                <div style="color:var(--muted);" id="d-perrow-example">e.g. a1b2c3d4...,1700000000000,1702678400000</div>
+                <div style="margin-top:8px;color:var(--muted);font-size:11px;" id="d-perrow-note">Maps to: starttime = resultone[1] · endtime = resultone[2]</div>
               </div>
             </div>
           </div>
@@ -949,15 +965,15 @@
             <div class="card-title" style="margin-bottom:0;">Command Preview</div>
             <button class="btn btn-outline btn-sm" onclick="dCopyCommand()">⎘ Copy</button>
           </div>
-          <div style="background:#080a0f;border:1px solid var(--border);border-radius:8px;padding:14px 16px;font-family:var(--mono);font-size:11px;line-height:1.9;color:var(--accent2);word-break:break-all;" id="d-cmd-preview">—</div>
+          <div style="background:#080a0f;border:1px solid var(--border);border-radius:8px;padding:14px 16px;font-family:var(--mono);font-size:11px;line-height:1.9;color:var(--accent2);word-break:break-all;white-space:pre-wrap;" id="d-cmd-preview">—</div>
         </div>
 
         <div class="card">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-            <div class="card-title" style="margin-bottom:0;">SQS Message Body</div>
+            <div class="card-title" style="margin-bottom:0;" id="d-msg-title">SQS Message Body</div>
             <span class="badge badge-teal" id="d-msg-env-badge">NA2</span>
           </div>
-          <div style="background:#080a0f;border:1px solid var(--border);border-radius:8px;padding:14px 16px;font-family:var(--mono);font-size:10px;line-height:1.8;color:#7a8099;word-break:break-all;max-height:120px;overflow-y:auto;" id="d-msg-preview">—</div>
+          <div style="background:#080a0f;border:1px solid var(--border);border-radius:8px;padding:14px 16px;font-family:var(--mono);font-size:10px;line-height:1.8;color:#7a8099;word-break:break-all;white-space:pre-wrap;max-height:220px;overflow-y:auto;" id="d-msg-preview">—</div>
         </div>
 
         <div style="display:flex;gap:8px;">
@@ -2701,10 +2717,86 @@ const DISAGG_ENV_CONFIG = {
   },
 };
 
+// NSM Disagg — SNS topics per environment (display only; server.py's
+// NSM_DISAGG_CONFIG is the source of truth and resolves the ARN itself —
+// the browser only ever sends 'main' / 'adhoc').
+const NSM_DISAGG_CONFIG = {
+  NA2: { region: 'us-east-1',    account: '857283459404', topics: [
+    { key: 'adhoc', label: 'Adhoc (prod-na-2-adhoc2)', name: 'NSMDisaggReadyUsers-prod-na-2-adhoc2' },
+    { key: 'main',  label: 'Main (prod-na-2)',         name: 'NSMDisaggReadyUsers-prod-na-2' },
+  ]},
+  NA:  { region: 'us-east-1',    account: '857283459404', topics: [
+    { key: 'adhoc', label: 'Adhoc (prod-na-adhoc)',    name: 'NSMDisaggReadyUsers-prod-na-adhoc' },
+    { key: 'main',  label: 'Main (prod-na)',           name: 'NSMDisaggReadyUsers-prod-na' },
+  ]},
+  CA:  { region: 'ca-central-1', account: '076900401824', topics: [
+    { key: 'adhoc', label: 'Adhoc (prod-ca-adhoc)',    name: 'NSMDisaggReadyUsers-prod-ca-adhoc' },
+    { key: 'main',  label: 'Main (prod-ca)',           name: 'NSMDisaggReadyUsers-prod-ca' },
+  ]},
+  EU:  { region: 'eu-central-1', account: '967871724166', topics: [
+    { key: 'adhoc', label: 'Adhoc (prod-eu-adhoc)',    name: 'NSMDisaggReadyUsers-prod-eu-adhoc' },
+    { key: 'main',  label: 'Main (prod-eu)',           name: 'NSMDisaggReadyUsers-prod-eu' },
+  ]},
+};
+const NSM_MESSAGE_BODY = 'PROD_Lambda_Message';
+
 let dCurrentEnv = 'NA2';
 let dUuidMode = 'single';
 let dTimeMode = 'manual';
 let dLoadedUuids = [];
+let dDisaggType = 'pyami';   // 'pyami' (SQS gbTempDataReadyEvent) | 'nsm' (SNS NSMDisaggReadyUsers)
+
+function dIsNsm() { return dDisaggType === 'nsm'; }
+
+function dNsmTopic() {
+  const key = document.getElementById('d-queue-select')?.value;
+  return NSM_DISAGG_CONFIG[dCurrentEnv].topics.find(t => t.key === key) || NSM_DISAGG_CONFIG[dCurrentEnv].topics[0];
+}
+
+function dNsmTopicArn() {
+  const cfg = NSM_DISAGG_CONFIG[dCurrentEnv];
+  return `arn:aws:sns:${cfg.region}:${cfg.account}:${dNsmTopic().name}`;
+}
+
+function dSetDisaggType(type) {
+  if (isDisaggRunning) { alert('A Disaggregation run is in progress — wait for it to finish before switching type.'); return; }
+  dDisaggType = type;
+  const nsm = dIsNsm();
+  document.getElementById('d-type-pyami').classList.toggle('active', !nsm);
+  document.getElementById('d-type-nsm').classList.toggle('active', nsm);
+  document.getElementById('d-page-sub').textContent = nsm
+    ? 'Configure environment, SNS topic and parameters — publishes to SNS (UUID · START · END · MTYPE) for the NSM Disagg Lambda'
+    : 'Configure environment, queue and parameters — dispatches gbTempDataReadyEvent to SQS';
+  document.getElementById('d-env-card-title').textContent = nsm ? 'Environment & Topic' : 'Environment & Queue';
+  document.getElementById('d-queue-label').textContent = nsm ? 'SNS Topic' : 'SQS Queue';
+  document.getElementById('d-hid-group').style.display = nsm ? 'none' : '';
+  document.getElementById('d-mtype-group').style.display = nsm ? '' : 'none';
+  document.getElementById('d-start-label').textContent = nsm ? 'Start Time (epoch seconds)' : 'Start Time (epoch ms)';
+  document.getElementById('d-end-label').textContent = nsm ? 'End Time (epoch seconds)' : 'End Time (epoch ms)';
+  document.getElementById('d-start-hint').style.display = nsm ? 'block' : 'none';
+  if (nsm && !document.getElementById('d-param-starttime').value) document.getElementById('d-param-starttime').value = '0';
+  document.getElementById('d-perrow-format').textContent = nsm ? 'UUID,start,end  (header row optional)' : '{uuid},{startTs},{endTs}';
+  document.getElementById('d-perrow-example').textContent = nsm ? 'e.g. a1b2c3d4...,0,1762041600' : 'e.g. a1b2c3d4...,1700000000000,1702678400000';
+  document.getElementById('d-perrow-note').textContent = nsm
+    ? 'Epoch SECONDS · start 0 = last 13 months · every row needs both start and end'
+    : 'Maps to: starttime = resultone[1] · endtime = resultone[2]';
+  document.getElementById('d-msg-title').textContent = nsm ? 'SNS Message Preview' : 'SQS Message Body';
+  document.querySelector('#d-dispatch-btn').innerHTML = nsm ? '◀ &nbsp;Dispatch NSM Disaggregation Run' : '◀ &nbsp;Dispatch Disaggregation Run';
+  dPopulateQueues();
+  dUpdatePreview();
+}
+
+// Validates NSM epoch values the same way the standalone NSM tool did (and the
+// server re-checks): seconds only, START may be 0, ms values rejected.
+function dNsmEpochError(raw, label, allowZero) {
+  const s = String(raw ?? '').trim();
+  if (!/^\d+$/.test(s)) return `${label} '${raw}' is not a valid epoch (digits only, seconds)`;
+  const v = Number(s);
+  if (allowZero && v === 0) return null;
+  if (s.length >= 13) return `${label} '${raw}' looks like milliseconds — use epoch seconds (${Math.floor(v / 1000)})`;
+  if (v < 1262304000 || v > 4102444800) return `${label} '${raw}' is outside the allowed range (2010–2100)`;
+  return null;
+}
 
 function dSelectEnv(el, env) {
   document.querySelectorAll('#d-env-selector .env-btn').forEach(b => b.classList.remove('active'));
@@ -2717,6 +2809,11 @@ function dSelectEnv(el, env) {
 
 function dPopulateQueues() {
   const sel = document.getElementById('d-queue-select');
+  if (dIsNsm()) {
+    sel.innerHTML = NSM_DISAGG_CONFIG[dCurrentEnv].topics.map(t => `<option value="${t.key}">${t.label}</option>`).join('');
+    sel.selectedIndex = 0; // default Adhoc (first item), same as the standalone NSM tool
+    return;
+  }
   const cfg = DISAGG_ENV_CONFIG[dCurrentEnv];
   sel.innerHTML = cfg.queues.map(q => `<option value="${q.name}">${q.label}</option>`).join('');
   sel.selectedIndex = 0; // default Adhoc (first item)
@@ -2750,7 +2847,10 @@ function dHandleAccountsFile(e) {
   document.getElementById('d-param-filename').value = file.name;
   const reader = new FileReader();
   reader.onload = (ev) => {
-    const lines = ev.target.result.split('\n').map(l => l.trim()).filter(Boolean);
+    let lines = ev.target.result.replace(/^﻿/, '').split('\n').map(l => l.trim()).filter(Boolean);
+    // Skip an optional header row (e.g. "UUID" or "UUID,start,end") — a real
+    // UUID never has "uuid" as its whole first column.
+    if (lines.length && lines[0].split(',')[0].trim().toLowerCase() === 'uuid') lines = lines.slice(1);
     dLoadedUuids = lines;
     const preview = document.getElementById('d-uuid-file-preview');
     preview.style.display = 'block';
@@ -2782,13 +2882,47 @@ function dBuildMsgBody() {
       endTs = document.getElementById('d-param-endtime')?.value || '{end}';
     }
   }
+  if (dIsNsm()) {
+    const mtype = document.getElementById('d-param-mtype')?.value || 'GAS';
+    return JSON.stringify({
+      TopicArn: dNsmTopicArn(),
+      Message: NSM_MESSAGE_BODY,
+      MessageAttributes: {
+        UUID:  { DataType: 'String', StringValue: userId },
+        START: { DataType: 'Number', StringValue: String(startTs) },
+        END:   { DataType: 'Number', StringValue: String(endTs) },
+        MTYPE: { DataType: 'String', StringValue: mtype },
+      },
+    }, null, 2);
+  }
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<gbTempDataReadyEvent\n  end="${endTs}"\n  homeOrdinal="${hid}"\n  start="${startTs}"\n  userId="${userId}"/>`;
+}
+
+function dNsmCliCommand() {
+  const cfg = NSM_DISAGG_CONFIG[dCurrentEnv];
+  const body = JSON.parse(dBuildMsgBody());
+  const attrs = JSON.stringify(body.MessageAttributes);
+  return [
+    `aws sns publish --region ${cfg.region} \\`,
+    `  --topic-arn ${dNsmTopicArn()} \\`,
+    `  --message '${NSM_MESSAGE_BODY}' \\`,
+    `  --message-attributes '${attrs}'`,
+  ].join('\n');
 }
 
 function dUpdatePreview() {
   const cfg = DISAGG_ENV_CONFIG[dCurrentEnv];
   const sel = document.getElementById('d-queue-select');
   if (!sel) return;
+  if (dIsNsm()) {
+    document.getElementById('d-queue-url-display').textContent = dNsmTopicArn();
+    const n = dUuidMode === 'single' ? 1 : dLoadedUuids.length;
+    const threads = document.getElementById('d-param-threads')?.value || '2';
+    document.getElementById('d-cmd-preview').textContent =
+      `# Equivalent AWS CLI command for 1 UUID — OpsHub publishes ${n} message(s) with ${threads} thread(s)\n` + dNsmCliCommand();
+    document.getElementById('d-msg-preview').textContent = dBuildMsgBody();
+    return;
+  }
   const qname = sel.value || '';
   const url = `https://sqs.${cfg.region}.amazonaws.com/${cfg.account}/${qname}`;
   document.getElementById('d-queue-url-display').textContent = url;
@@ -2829,12 +2963,52 @@ async function dDispatchRun() {
     if (!dLoadedUuids.length) { alert('Please upload a file with UUIDs before dispatching.'); return; }
   }
 
+  // NSM: validate everything up front (same checks as the standalone NSM tool;
+  // the server re-checks each batch too) and confirm before publishing, since
+  // there's no dry run here.
+  const nsm = dIsNsm();
+  if (nsm) {
+    const errs = [];
+    const perRow = dTimeMode === 'perrow';
+    const rows = dUuidMode === 'single'
+      ? [[document.getElementById('d-param-uuid-single').value.trim()]]
+      : dLoadedUuids.map(l => l.split(',').map(c => c.trim()));
+    if (!perRow) {
+      const s = document.getElementById('d-param-starttime').value.trim();
+      const e = document.getElementById('d-param-endtime').value.trim();
+      const es = dNsmEpochError(s, 'Start Time', true), ee = dNsmEpochError(e, 'End Time', false);
+      if (es) errs.push(es);
+      if (ee) errs.push(ee);
+      if (!es && !ee && Number(s) >= Number(e)) errs.push(`Start Time (${s}) must be earlier than End Time (${e})`);
+    } else {
+      rows.forEach((r, i) => {
+        if (!r[1] || !r[2]) { errs.push(`Row ${i + 1} (${r[0]}): start/end missing`); return; }
+        const es = dNsmEpochError(r[1], `Row ${i + 1} start`, true), ee = dNsmEpochError(r[2], `Row ${i + 1} end`, false);
+        if (es) errs.push(es);
+        if (ee) errs.push(ee);
+        if (!es && !ee && Number(r[1]) >= Number(r[2])) errs.push(`Row ${i + 1} (${r[0]}): start must be earlier than end`);
+      });
+    }
+    const seen = new Set(), dups = new Set();
+    rows.forEach(r => { if (!r[0]) return; if (seen.has(r[0])) dups.add(r[0]); seen.add(r[0]); });
+    if (dups.size) errs.push(`Duplicate UUIDs (${dups.size}): ${[...dups].slice(0, 10).join(', ')}${dups.size > 10 ? ' …' : ''}`);
+    if (rows.some(r => !r[0])) errs.push('One or more rows have no UUID');
+    if (errs.length) {
+      alert('Fix the following before dispatching:\n\n- ' + errs.slice(0, 15).join('\n- ') + (errs.length > 15 ? `\n… and ${errs.length - 15} more` : ''));
+      return;
+    }
+    const t = dNsmTopic();
+    if (!confirm(`Publish ${rows.length} NSM Disagg message(s)?\n\nEnvironment: ${dCurrentEnv}\nTopic: ${t.name}\nMTYPE: ${document.getElementById('d-param-mtype').value}\nTicket: ${ticketNumber}`)) return;
+  }
+
   isDisaggRunning = true;
   disaggStopRequested = false;
   const unlockBtn = lockDispatchButton('d-dispatch-btn', 'd-stop-btn');
 
   const cfg    = DISAGG_ENV_CONFIG[dCurrentEnv];
-  const qname  = document.getElementById('d-queue-select').value;
+  const qname  = nsm ? dNsmTopic().name : document.getElementById('d-queue-select').value;
+  const topicKey = nsm ? dNsmTopic().key : null;
+  const mtype  = nsm ? document.getElementById('d-param-mtype').value : null;
   const threads = parseInt(document.getElementById('d-param-threads').value);
   const hid    = parseInt(document.getElementById('d-param-hid').value) || 1;
   const batchSize = parseInt(document.getElementById('d-param-batchsize').value) || 500;
@@ -2858,7 +3032,7 @@ async function dDispatchRun() {
   const statusLine = document.getElementById('d-run-status-line');
 
   card.style.display = 'block';
-  document.getElementById('d-run-title').textContent = `DISPATCHING · ${dCurrentEnv} · DISAGG`;
+  document.getElementById('d-run-title').textContent = `DISPATCHING · ${dCurrentEnv} · ${nsm ? 'NSM DISAGG' : 'DISAGG'}`;
   logEl.innerHTML = ''; bar.style.width = '0%';
   statusLine.innerHTML = '<div class="spinner"></div> Running...';
   pct.textContent = '0%';
@@ -2878,11 +3052,12 @@ async function dDispatchRun() {
 
   appendLog(`[INFO]  Ticket: ${ticketNumber}`);
   appendLog(`[INFO]  Environment: ${dCurrentEnv} (${cfg.region})`);
-  if (cfg.profile) appendLog(`[INFO]  AWS profile: ${cfg.profile}`);
-  appendLog(`[INFO]  Queue: ${qname}`);
+  if (!nsm && cfg.profile) appendLog(`[INFO]  AWS profile: ${cfg.profile}`);
+  appendLog(nsm ? `[INFO]  SNS topic: ${qname}` : `[INFO]  Queue: ${qname}`);
+  if (nsm) appendLog(`[INFO]  MTYPE: ${mtype}`);
   appendLog(`[INFO]  Mode: ${isSingle ? `single UUID — ${uuids[0]}` : `file — ${uuids.length} record(s)`}`);
   appendLog(isPerRow ? `[INFO]  Time source: per-row from file` : `[INFO]  Time source: manual — startTs=${fixedStart}, endTs=${fixedEnd}`);
-  appendLog(`[INFO]  Message type: gbTempDataReadyEvent`);
+  appendLog(nsm ? `[INFO]  Message: ${NSM_MESSAGE_BODY} (SNS attributes UUID · START · END · MTYPE)` : `[INFO]  Message type: gbTempDataReadyEvent`);
   appendLog(`[INFO]  Batching: ${uuids.length} record(s) into ${totalBatches} batch(es) of up to ${batchSize}`);
   setProgress(0, `Batch 0/${totalBatches}...`);
 
@@ -2896,7 +3071,13 @@ async function dDispatchRun() {
       break;
     }
     const batchUuids = uuidBatches[b];
-    const body = {
+    const body = nsm ? {
+      env: dCurrentEnv, ticket_number: ticketNumber, topic: topicKey, mtype,
+      uuids: batchUuids,
+      start_ts: isPerRow ? startBatches[b] : fixedStart,
+      end_ts:   isPerRow ? endBatches[b]   : fixedEnd,
+      threads,
+    } : {
       env: dCurrentEnv, ticket_number: ticketNumber, queue_name: qname,
       uuids: batchUuids, hid,
       start_ts: isPerRow ? startBatches[b] : fixedStart,
@@ -2906,7 +3087,7 @@ async function dDispatchRun() {
 
     disaggAbortCtrl = new AbortController();
     try {
-      const resp = await fetch('/dispatch/disaggregation', {
+      const resp = await fetch(nsm ? '/dispatch/nsm_disaggregation' : '/dispatch/disaggregation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -2945,9 +3126,11 @@ async function dDispatchRun() {
   }
 
   bar.style.background = disaggStopRequested ? 'var(--danger)' : hadError && totalSent === 0 ? 'var(--danger)' : totalFailed > 0 ? 'var(--warn)' : 'var(--success)';
+  const msgKind = nsm ? 'SNS message(s) published' : 'SQS message(s) sent';
   appendLog(disaggStopRequested
-    ? `[WARN]  Disaggregation run TERMINATED by user — ${totalSent}/${uuids.length} SQS message(s) sent to ${qname} before stopping`
-    : `[SUCCESS]  Disaggregation run complete — ${totalSent}/${uuids.length} SQS message(s) sent to ${qname} across ${totalBatches} batch(es)`);
+    ? `[WARN]  ${nsm ? 'NSM ' : ''}Disaggregation run TERMINATED by user — ${totalSent}/${uuids.length} ${msgKind} to ${qname} before stopping`
+    : `[SUCCESS]  ${nsm ? 'NSM ' : ''}Disaggregation run complete — ${totalSent}/${uuids.length} ${msgKind} to ${qname} across ${totalBatches} batch(es)`);
+  if (nsm && !disaggStopRequested && totalSent > 0) appendLog(`[INFO]  PUBLISHED = SNS accepted the message. The NSM Disagg Lambda runs asynchronously — check its CloudWatch logs for the outcome.`);
   statusLine.innerHTML = disaggStopRequested
     ? '<span style="color:var(--danger);">⏹ Terminated</span>'
     : totalFailed === 0
@@ -2958,7 +3141,7 @@ async function dDispatchRun() {
 
   await logRun({
     type: 'Disaggregation', ticket: ticketNumber, env: dCurrentEnv,
-    queue: qname, measurement: '—',
+    queue: nsm ? `NSM · ${qname}` : qname, measurement: nsm ? mtype : '—',
     entries: uuids.length, sent: totalSent, failed: totalFailed,
     terminated: disaggStopRequested,
   });

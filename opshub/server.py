@@ -437,6 +437,69 @@ ENV_CONFIG = {
     },
 }
 
+# ─── NSM DISAGG (SNS) CONFIG ────────────────────────────────────
+# Ported from the standalone NSM Disaggregation Re-Run tool (config/environments.yaml).
+# One SNS publish per UUID: body PROD_Lambda_Message plus UUID/START/END/MTYPE message
+# attributes; the NSM Disagg Lambda subscribed to the topic does the actual re-run.
+# The topic ARN is always resolved HERE from (env, topic key) — the browser only ever
+# sends 'main' / 'adhoc', never a raw ARN, so nobody can publish to an arbitrary topic.
+NSM_DISAGG_CONFIG = {
+    'message_body': 'PROD_Lambda_Message',
+    'mtype_options': ['GAS', 'ELECTRIC', 'WATER'],
+    'environments': {
+        'NA2': {'region': 'us-east-1', 'account': '857283459404', 'topics': {
+            'main':  'arn:aws:sns:us-east-1:857283459404:NSMDisaggReadyUsers-prod-na-2',
+            'adhoc': 'arn:aws:sns:us-east-1:857283459404:NSMDisaggReadyUsers-prod-na-2-adhoc2',
+        }},
+        'NA': {'region': 'us-east-1', 'account': '857283459404', 'topics': {
+            'main':  'arn:aws:sns:us-east-1:857283459404:NSMDisaggReadyUsers-prod-na',
+            'adhoc': 'arn:aws:sns:us-east-1:857283459404:NSMDisaggReadyUsers-prod-na-adhoc',
+        }},
+        'CA': {'region': 'ca-central-1', 'account': '076900401824', 'topics': {
+            'main':  'arn:aws:sns:ca-central-1:076900401824:NSMDisaggReadyUsers-prod-ca',
+            'adhoc': 'arn:aws:sns:ca-central-1:076900401824:NSMDisaggReadyUsers-prod-ca-adhoc',
+        }},
+        'EU': {'region': 'eu-central-1', 'account': '967871724166', 'topics': {
+            'main':  'arn:aws:sns:eu-central-1:967871724166:NSMDisaggReadyUsers-prod-eu',
+            'adhoc': 'arn:aws:sns:eu-central-1:967871724166:NSMDisaggReadyUsers-prod-eu-adhoc',
+        }},
+    },
+}
+NSM_MIN_EPOCH = 1262304000   # 2010-01-01, seconds
+NSM_MAX_EPOCH = 4102444800   # 2100-01-01, seconds
+
+
+def _nsm_parse_epoch(raw, label, allow_zero=False):
+    """Same rules as the standalone tool's inputs.parse_epoch: epoch SECONDS only,
+    0 allowed for START (= Lambda default, last 13 months), millisecond values
+    rejected with a hint rather than silently sent."""
+    s = str(raw).strip() if raw is not None else ''
+    if s.endswith('.0'):
+        s = s[:-2]
+    if not s.isdigit():
+        return None, f"{label} '{raw}' is not a valid epoch (digits only, seconds)"
+    v = int(s)
+    if allow_zero and v == 0:
+        return 0, None
+    if len(s) >= 13:
+        return None, f"{label} '{raw}' looks like milliseconds — use epoch seconds ({v // 1000})"
+    if not (NSM_MIN_EPOCH <= v <= NSM_MAX_EPOCH):
+        return None, f"{label} '{raw}' is outside the allowed range (2010–2100)"
+    return v, None
+
+
+def build_nsm_sns_payload(uuid, start, end, mtype):
+    return {
+        'Message': NSM_DISAGG_CONFIG['message_body'],
+        'MessageAttributes': {
+            'UUID':  {'DataType': 'String', 'StringValue': uuid},
+            'START': {'DataType': 'Number', 'StringValue': str(start)},
+            'END':   {'DataType': 'Number', 'StringValue': str(end)},
+            'MTYPE': {'DataType': 'String', 'StringValue': mtype},
+        },
+    }
+
+
 # ─── BC TRACKER (S3) CONFIG ─────────────────────────────────────
 BC_DASHBOARD_S3_BUCKET  = 'bidgely-support-ps'
 BC_DASHBOARD_S3_KEY     = 'scripts/bc_dashboard_final_status.json'
@@ -518,18 +581,19 @@ def _assume_destination_role(role_arn, region, env):
     }
 
 
-_xacct_sqs_clients = {}
+_xacct_clients = {}
 _xacct_lock = threading.Lock()
 
 
-def _get_cross_account_sqs_client(role_arn, region, env):
-    """Reusable, auto-refreshing SQS client for a destination account. Cached per
-    (role, region), so AGG, DISAGG and Rate Comparison for the same destination share
-    one assumed-role session. boto3 clients are thread-safe, and RefreshableCredentials
+def _get_cross_account_client(service, role_arn, region, env):
+    """Reusable, auto-refreshing boto3 client ('sqs' or 'sns') for a destination
+    account. Cached per (service, role, region), so AGG, DISAGG and Rate Comparison
+    for the same destination share one assumed-role SQS session, and NSM Disagg
+    shares one SNS session. boto3 clients are thread-safe, and RefreshableCredentials
     serializes its own refresh, so the dispatch thread pools can share it safely."""
-    key = (role_arn, region)
+    key = (service, role_arn, region)
     with _xacct_lock:
-        client = _xacct_sqs_clients.get(key)
+        client = _xacct_clients.get(key)
         if client is None:
             credentials = RefreshableCredentials.create_from_metadata(
                 metadata=_assume_destination_role(role_arn, region, env),
@@ -538,9 +602,13 @@ def _get_cross_account_sqs_client(role_arn, region, env):
             )
             bc_session = get_botocore_session()
             bc_session._credentials = credentials   # standard way to plug in refreshable assume-role creds
-            client = boto3.Session(botocore_session=bc_session, region_name=region).client('sqs')
-            _xacct_sqs_clients[key] = client
+            client = boto3.Session(botocore_session=bc_session, region_name=region).client(service)
+            _xacct_clients[key] = client
     return client
+
+
+def _get_cross_account_sqs_client(role_arn, region, env):
+    return _get_cross_account_client('sqs', role_arn, region, env)
 
 
 _source_account_cache = {}
@@ -583,6 +651,25 @@ def get_sqs_client(script_type, env):
                    f"{env.upper()}_DESTINATION_ROLE_ARN is not set — sending with the source role, which only "
                    f"works if the queue's access policy allows it.")
     return _get_boto3_session(cfg['profile'], region).client('sqs')
+
+
+def get_sns_client(env):
+    """SNS client for NSM Disagg. Same identity rules as get_sqs_client: if
+    <ENV>_DESTINATION_ROLE_ARN is set (CA, EU) the role in that account is
+    assumed — so that role also needs sns:Publish on the NSM topics — otherwise
+    the pod's own role publishes (NA / NA2, same account)."""
+    cfg = NSM_DISAGG_CONFIG['environments'][env]
+    region = _destination_region(env, cfg)
+    role_arn = _destination_role_arn(env)
+    if role_arn:
+        return _get_cross_account_client('sns', role_arn, region, env)
+    src = _source_account()
+    if src and src != cfg['account']:
+        _warn_once(('no-role-sns', env),
+                   f"{env} NSM topics are in account {cfg['account']} but this app runs as account {src} and "
+                   f"{env.upper()}_DESTINATION_ROLE_ARN is not set — publishing with the source role, which only "
+                   f"works if the topic's access policy allows it.")
+    return _get_boto3_session(None, region).client('sns')
 
 
 def build_queue_url(script_type, env, queue_name):
@@ -821,6 +908,90 @@ def dispatch_disaggregation():
         })
     except Exception as e:
         log.exception('Disaggregation dispatch error')
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/dispatch/nsm_disaggregation', methods=['POST'])
+@login_required
+def dispatch_nsm_disaggregation():
+    """NSM Disagg: one SNS publish per UUID (vs. PyAMI Disagg above, which sends
+    gbTempDataReadyEvent to SQS). Called once per batch by the Disaggregation tab
+    when Disagg Type = NSM."""
+    data = request.json or {}
+    role = session['user']['role']
+    ok, err = check_dispatch_permission(role, 'nsm_disaggregation', data.get('topic', ''))
+    if not ok:
+        return jsonify({'status': 'error', 'message': err}), 403
+
+    env       = data.get('env')
+    topic_key = (data.get('topic') or '').lower()
+    mtype     = (data.get('mtype') or '').upper()
+    uuids     = [str(u).strip() for u in (data.get('uuids') or [])]
+    threads   = max(1, min(int(data.get('threads', 2) or 2), 20))
+
+    env_cfg = NSM_DISAGG_CONFIG['environments'].get(env)
+    if not env_cfg:
+        return jsonify({'status': 'error', 'message': f'Unknown environment: {env}'}), 400
+    topic_arn = env_cfg['topics'].get(topic_key)
+    if not topic_arn:
+        return jsonify({'status': 'error', 'message': f'Unknown NSM topic: {topic_key}'}), 400
+    if mtype not in NSM_DISAGG_CONFIG['mtype_options']:
+        return jsonify({'status': 'error', 'message': f'MTYPE must be one of {NSM_DISAGG_CONFIG["mtype_options"]}'}), 400
+    if not uuids or any(not u for u in uuids):
+        return jsonify({'status': 'error', 'message': 'Every row needs a UUID'}), 400
+
+    # Same single-value-or-per-uuid-list handling as the SQS dispatch routes.
+    start_raw, end_raw = data.get('start_ts', 0), data.get('end_ts')
+    start_list = start_raw if isinstance(start_raw, list) else [start_raw] * len(uuids)
+    end_list   = end_raw   if isinstance(end_raw, list)   else [end_raw] * len(uuids)
+    if len(start_list) != len(uuids) or len(end_list) != len(uuids):
+        return jsonify({'status': 'error', 'message':
+                        f'start_ts/end_ts count ({len(start_list)}/{len(end_list)}) does not match uuid count ({len(uuids)})'}), 400
+
+    # Validate the whole batch before publishing anything, so a bad row never
+    # leaves a batch half-sent.
+    jobs, errors = [], []
+    for u, s_raw, e_raw in zip(uuids, start_list, end_list):
+        s, es = _nsm_parse_epoch(s_raw, f'{u} START', allow_zero=True)
+        e, ee = _nsm_parse_epoch(e_raw, f'{u} END')
+        errors += [x for x in (es, ee) if x]
+        if s is not None and e is not None:
+            if s >= e:
+                errors.append(f'{u}: START ({s}) must be earlier than END ({e})')
+            else:
+                jobs.append((u, s, e))
+    if errors:
+        more = f' (+{len(errors) - 10} more)' if len(errors) > 10 else ''
+        return jsonify({'status': 'error', 'message': '; '.join(errors[:10]) + more}), 400
+
+    try:
+        sns = get_sns_client(env)
+        results = {'sent': [], 'failed': []}
+
+        def send_one(job):
+            u, s, e = job
+            try:
+                resp = sns.publish(TopicArn=topic_arn, **build_nsm_sns_payload(u, s, e, mtype))
+                mid = resp['MessageId']
+                log.info(f'NSM DISAGG published uuid={u} topic={topic_arn.split(":")[-1]} messageId={mid}')
+                results['sent'].append({'uuid': u, 'messageId': mid})
+            except Exception as ex:
+                log.error(f'NSM DISAGG failed uuid={u} error={ex}')
+                results['failed'].append({'uuid': u, 'error': f'{type(ex).__name__}: {ex}'[:500]})
+
+        with ThreadPoolExecutor(max_workers=threads) as ex:
+            list(ex.map(send_one, jobs))
+
+        return jsonify({
+            'status': 'ok',
+            'total':  len(jobs),
+            'sent':   len(results['sent']),
+            'failed': len(results['failed']),
+            'topic_arn': topic_arn,
+            'results': results,
+        })
+    except Exception as e:
+        log.exception('NSM disaggregation dispatch error')
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
