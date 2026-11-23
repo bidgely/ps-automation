@@ -81,9 +81,13 @@
     border-bottom: 1px solid var(--border);
     gap: 2px;
     flex-shrink: 0;
+    overflow-x: auto;
+    scrollbar-width: thin;
   }
   .nav-tab {
-    padding: 12px 20px;
+    padding: 12px 14px;
+    white-space: nowrap;
+    flex-shrink: 0;
     font-size: 13px;
     font-weight: 400;
     color: var(--muted);
@@ -104,6 +108,76 @@
     padding: 28px;
     overflow-y: auto;
   }
+  /* ─── SQS Queues tab ─── */
+  .sq-controls { display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; }
+  .sq-seg { display:inline-flex; gap:6px; }
+  .sq-spacer { flex:1; }
+  .sq-chk { display:inline-flex; gap:7px; align-items:center; font-size:12px; color:var(--muted); cursor:pointer; }
+  .sq-chk input { accent-color: var(--accent); }
+  .sq-meta { font-size:11px; color:var(--muted); font-family:var(--mono); margin-top:12px; }
+  .sq-status { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 18px; }
+  .sq-count { display:inline-flex; align-items:baseline; gap:7px; padding:6px 14px 6px 12px; border-radius:999px;
+              background:var(--surface); border:1px solid var(--border); font-size:13px; color:var(--text); }
+  .sq-count b { font-size:17px; font-weight:600; font-family:var(--mono); }
+  .sq-count.red b { color:var(--danger); } .sq-count.yellow b { color:var(--warn); }
+  .sq-count.green b { color:var(--success); } .sq-count.err b { color:var(--muted); }
+  .sq-row { margin-bottom:24px; }
+  .sq-row-head { display:flex; flex-wrap:wrap; gap:4px 14px; align-items:baseline; margin-bottom:10px; }
+  .sq-row-head h3 { font-size:14px; font-weight:600; margin:0; color:var(--text); }
+  .sq-row-head .tot { font-size:12px; color:var(--muted); }
+  .sq-row-head .tot b { color:var(--text); font-weight:600; font-family:var(--mono); }
+  .sq-row-head .rule { font-size:11px; color:var(--muted); margin-left:auto; font-family:var(--mono); }
+  .sq-tbl-wrap { overflow-x:auto; background:var(--surface); border:1px solid var(--border); border-radius:10px; }
+  table.sq-tbl { width:100%; border-collapse:collapse; font-size:12px; font-family:var(--mono); }
+  table.sq-tbl th { text-align:left; font-weight:500; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted);
+                    background:var(--surface2); padding:9px 12px; border-bottom:1px solid var(--border); white-space:nowrap; position:sticky; top:0; }
+  table.sq-tbl td { padding:8px 12px; border-bottom:1px solid var(--border); white-space:nowrap; color:var(--text); }
+  table.sq-tbl tr:last-child td { border-bottom:0; }
+  table.sq-tbl tbody tr { cursor:pointer; border-left:3px solid transparent; }
+  table.sq-tbl tbody tr:hover td { background:rgba(255,255,255,0.03); }
+  table.sq-tbl .num { text-align:right; }
+  table.sq-tbl td.av { font-weight:600; }
+  table.sq-tbl td.env { font-weight:600; width:1%; }
+  table.sq-tbl td.err-txt { color:var(--muted); }
+  table.sq-tbl tr.green { border-left-color:var(--success); }
+  table.sq-tbl tr.yellow { border-left-color:var(--warn); background:rgba(245,166,35,0.06); }
+  table.sq-tbl tr.red { border-left-color:var(--danger); background:rgba(245,82,82,0.07); }
+  table.sq-tbl tr.red td.av { color:var(--danger); }
+  table.sq-tbl tr.err { border-left-color:var(--muted); }
+  table.sq-tbl td.boxes.starved { color:var(--danger); font-weight:700; }
+  table.sq-tbl td.boxes .of { color:var(--muted); font-weight:400; }
+  .sq-unmapped { color:var(--muted); cursor:help; }
+  .sq-bar { width:130px; height:6px; border-radius:3px; background:var(--border); overflow:hidden; }
+  .sq-bar span { display:block; height:100%; border-radius:3px; }
+  .sq-bar .green { background:var(--success); } .sq-bar .yellow { background:var(--warn); } .sq-bar .red { background:var(--danger); }
+  .sq-trend { font-size:11px; color:var(--muted); }
+  .sq-trend.up { color:var(--danger); font-weight:600; } .sq-trend.down { color:var(--success); }
+  .sq-tag { display:inline-block; font-size:10px; padding:1px 7px; border-radius:999px; margin-left:6px; font-family:var(--mono);
+            background:rgba(255,255,255,0.04); color:var(--muted); border:1px solid var(--border); vertical-align:1px; }
+  .sq-tag.red { background:var(--danger); color:#fff; border-color:var(--danger); }
+  .sq-tag.free { background:rgba(61,220,132,0.12); color:var(--success); border-color:rgba(61,220,132,0.35); margin-left:0; }
+  .sq-tag.busy { background:rgba(245,166,35,0.12); color:var(--warn); border-color:rgba(245,166,35,0.35); margin-left:0; }
+  .sq-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:8px; }
+  .sq-tile { text-align:left; font:inherit; color:var(--text); border-radius:8px; padding:9px 12px 10px; background:var(--surface);
+             border:1px solid var(--border); border-left:3px solid var(--border); cursor:pointer; }
+  .sq-tile.green { border-left-color:var(--success); }
+  .sq-tile.yellow { border-left-color:var(--warn); background:rgba(245,166,35,0.06); }
+  .sq-tile.red { border-left-color:var(--danger); background:rgba(245,82,82,0.07); }
+  .sq-tile.err { border-left-color:var(--muted); border-style:dashed; }
+  .sq-tile .nm { font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-family:var(--mono); }
+  .sq-tile .nm b { color:var(--text); }
+  .sq-tile .av { font-size:20px; font-weight:600; line-height:1.3; font-family:var(--mono); }
+  .sq-tile.red .av { color:var(--danger); }
+  .sq-tile.err .av { font-size:13px; font-weight:500; color:var(--muted); padding:4px 0 2px; }
+  .sq-tile .fl, .sq-tile .tp { font-size:11px; color:var(--muted); }
+  .sq-tile .tp.starved { color:var(--danger); font-weight:600; }
+  .sq-tile .st { margin-top:4px; }
+  .sq-empty, .sq-error { padding:24px 18px; text-align:center; background:var(--surface); border:1px solid var(--border); border-radius:10px; color:var(--muted); font-size:13px; }
+  .sq-error { color:var(--danger); border-color:rgba(245,82,82,0.35); }
+  .sq-foot { font-size:11px; color:var(--muted); margin:8px 0 0; max-width:110ch; line-height:1.6; }
+  .sq-nav-dot { display:inline-block; width:7px; height:7px; border-radius:50%; margin-left:6px; background:transparent; vertical-align:1px; }
+  .sq-nav-dot.red { background:var(--danger); } .sq-nav-dot.yellow { background:var(--warn); } .sq-nav-dot.green { background:var(--success); }
+
   .page { display: none; }
   .page.active { display: block; }
   /* PAGE HEADER */
@@ -518,6 +592,9 @@
   </div>
   <div class="nav-tab" data-tab="herrevoke" onclick="switchTab('herrevoke')">
     <span class="tab-icon">✕</span> HER Revocation
+  </div>
+  <div class="nav-tab" data-tab="sqsqueues" onclick="switchTab('sqsqueues')" title="SQS queue depth, throughput and boxes">
+    <span class="tab-icon">≋</span> SQS Queues<span class="sq-nav-dot" id="sq-nav-dot"></span>
   </div>
   <div class="nav-tab" data-tab="bctracker" onclick="switchTab('bctracker')">
     <span class="tab-icon">◉</span> BC Schedule Tracker
@@ -1284,15 +1361,6 @@
               <div class="toggle-knob"></div>
             </div>
           </div>
-          <div class="form-group" style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;margin-bottom:0;">
-            <span>
-              <span class="form-label" style="margin-bottom:2px;">Retry = false</span>
-              <div style="font-size:11px;color:var(--muted);">Adds <code style="font-family:var(--mono);font-size:11px;color:var(--accent2);">retry=false</code> to the call — turn off to leave the parameter out</div>
-            </span>
-            <div class="toggle-switch on" id="her-retry-toggle" onclick="herToggleRetry()">
-              <div class="toggle-knob"></div>
-            </div>
-          </div>
         </div>
 
         <!-- EXECUTION PARAMS -->
@@ -1318,40 +1386,6 @@
             </div>
 
             <div id="her-id-file-section" style="display:none;">
-              <div id="her-sb-card" style="margin-bottom:14px;padding:12px 14px;background:rgba(56,232,198,0.04);border:1px solid rgba(56,232,198,0.18);border-radius:10px;">
-                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px;flex-wrap:wrap;">
-                  <label class="form-label" style="margin-bottom:0;color:var(--accent2);letter-spacing:.04em;">Fetch IDs from Starburst</label>
-                  <span id="her-sb-status" style="font-size:11px;font-family:var(--mono);color:var(--muted);"></span>
-                </div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
-                  <div style="flex:1;min-width:110px;">
-                    <label class="form-label" style="font-size:10.5px;">Pilot ID</label>
-                    <input class="form-input" type="text" id="her-sb-pilot" placeholder="e.g. 10068" style="font-family:var(--mono);font-size:12px;">
-                  </div>
-                  <div>
-                    <label class="form-label" style="font-size:10.5px;">From (UTC)</label>
-                    <div style="display:flex;gap:4px;">
-                      <input class="form-input" type="date" id="her-sb-start" style="font-family:var(--mono);font-size:12px;">
-                      <input class="form-input" type="time" id="her-sb-start-time" title="Optional start time (UTC) — blank = start of day" style="width:96px;font-family:var(--mono);font-size:12px;">
-                    </div>
-                  </div>
-                  <div>
-                    <label class="form-label" style="font-size:10.5px;">To (UTC, inclusive)</label>
-                    <div style="display:flex;gap:4px;">
-                      <input class="form-input" type="date" id="her-sb-end" style="font-family:var(--mono);font-size:12px;">
-                      <input class="form-input" type="time" id="her-sb-end-time" title="Optional end time (UTC) — blank = end of day" style="width:96px;font-family:var(--mono);font-size:12px;">
-                    </div>
-                  </div>
-                  <button class="btn btn-outline btn-sm" id="her-sb-fetch-btn" onclick="herStarburstFetch()">Fetch</button>
-                </div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
-                  <input class="form-input" type="text" id="her-sb-user" autocomplete="off" onchange="herStarburstRefreshStatus()" placeholder="Your Starburst user, e.g. you@bidgely.com/business_user" style="flex:2;min-width:220px;font-family:var(--mono);font-size:12px;">
-                  <input class="form-input" type="password" id="her-sb-pass" autocomplete="new-password" onchange="herStarburstRefreshStatus()" placeholder="Starburst password" style="flex:1;min-width:140px;font-family:var(--mono);font-size:12px;" onkeydown="if(event.key==='Enter')herStarburstFetch()">
-                </div>
-                <div style="font-size:11px;color:var(--muted);margin-top:6px;">Use your own Starburst login (the password you set from the invite email, not Google SSO). It's sent only for this lookup — never saved or logged — so the query runs with your own Starburst access. Leave both blank to use the shared account, if the server has one.</div>
-                <div id="her-sb-result" style="display:none;margin-top:10px;padding:8px 12px;background:#080a0f;border:1px solid var(--border);border-radius:6px;font-family:var(--mono);font-size:11px;color:var(--muted);"></div>
-                <div style="font-size:11px;color:var(--muted);margin-top:8px;">Finds HER notifications for that pilot that are GENERATED and not already REVOKED, in the environment selected above. Times are optional (UTC): leave them blank for whole days, or set them to narrow the range — the To time includes that whole minute. This only looks them up — you review the count, load them into the list, and nothing is revoked until you press the normal start button.</div>
-              </div>
               <div style="display:flex;gap:8px;align-items:center;">
                 <input class="form-input" type="text" id="her-param-filename" placeholder="notification_ids.csv" style="flex:1;font-family:var(--mono);font-size:12px;" onchange="herUpdatePreview()">
                 <button class="btn btn-outline btn-sm" onclick="document.getElementById('her-file-input').click()">Browse</button>
@@ -1467,6 +1501,37 @@
   </div>
 
   <!-- ═══════════════════════ BC SCHEDULE TRACKER TAB ═══════════════════════ -->
+  <!-- ═══════════════════════ SQS QUEUES TAB ═══════════════════════ -->
+  <div class="page" id="page-sqsqueues">
+    <div class="page-header">
+      <div class="page-title">SQS Queues</div>
+      <div class="page-sub">Messages available, in flight, throughput and boxes running for the pipeline queues in NA, NA2, EU and CA — colour-coded by load</div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px;">
+      <div class="sq-controls">
+        <div class="sq-seg" id="sq-pool-seg">
+          <div class="mode-pill" data-sqpool="main">Main queues</div>
+          <div class="mode-pill" data-sqpool="adhoc">Adhoc queues</div>
+        </div>
+        <div class="sq-seg" id="sq-env-seg"></div>
+        <div class="sq-seg" id="sq-view-seg">
+          <div class="mode-pill" data-sqview="list">List</div>
+          <div class="mode-pill" data-sqview="tiles">Tiles</div>
+        </div>
+        <div class="sq-spacer"></div>
+        <label class="sq-chk"><input type="checkbox" id="sq-auto" checked> Auto-refresh every 30s</label>
+        <button class="btn btn-outline btn-sm" id="sq-refresh" onclick="sqLoad(true)">↻ Refresh now</button>
+      </div>
+      <div class="sq-meta" id="sq-meta">Not loaded yet</div>
+    </div>
+
+    <div class="sq-status" id="sq-status"></div>
+    <div id="sq-rows"></div>
+
+    <p class="sq-foot">Queues are sorted by messages available, highest first. Processed/min and incoming/min come from CloudWatch for the latest complete minute, which usually runs a few minutes behind. Trend compares the two: draining queues show an estimated time to empty at the current rate. Under All they form one combined list; under an environment they're grouped by service. Boxes is the number of instances running for the queue (hover for the source; "—" means none matched yet). The load bar fills up as a queue approaches and passes its red threshold. Click a queue to copy its URL. In the adhoc view, a queue is Free when it has nothing available, nothing in flight and nothing arriving; free queues are listed first.</p>
+  </div>
+
   <div class="page" id="page-bctracker">
     <div class="page-header">
       <div class="page-title">BC Schedule Tracker</div>
@@ -1821,8 +1886,8 @@
 // not actual access to the dispatch/data routes.
 // 'herrevoke' is admin + PS (user role) — not delivery.
 const ROLE_CONFIG = {
-  admin:    { tabs: ['rerun','disagg','ratecomp','herrevoke','bctracker','bc','runbook','admin'], queueFilter: null },
-  user:     { tabs: ['rerun','disagg','ratecomp','herrevoke','bctracker','bc','runbook','admin'], queueFilter: null },
+  admin:    { tabs: ['rerun','disagg','ratecomp','herrevoke','sqsqueues','bctracker','bc','runbook','admin'], queueFilter: null },
+  user:     { tabs: ['rerun','disagg','ratecomp','herrevoke','sqsqueues','bctracker','bc','runbook','admin'], queueFilter: null },
   delivery: { tabs: ['rerun'],                                            queueFilter: 'priority' },
 };
 
@@ -2092,8 +2157,256 @@ function switchTab(tab) {
   document.getElementById(`page-${tab}`).classList.add('active');
   if (tab === 'admin') { fetchRunLog().then(() => { updateAdminStats(); renderAdminTable(); }); }
   if (tab === 'bctracker' && !bctData) loadBcTracker();
-  if (tab === 'herrevoke') { herLoadTokenStatus(); herLoadAuditLog(); herUpdateStats(); herStarburstRefreshStatus(); }
+  if (tab === 'herrevoke') { herLoadTokenStatus(); herLoadAuditLog(); herUpdateStats(); }
+  if (tab === 'sqsqueues') { sqLoad(); sqSchedule(); } else { sqStopSchedule(); }
 }
+
+// ─── SQS QUEUES (monitoring) ───────────────────────────────────
+// Ported from OpsRadar's queue view. Data comes from GET /api/queue-metrics
+// (sqs_monitor.py), which caches for 30s server-side. Add ?sqdemo=1 to the page
+// URL to see fake numbers without touching AWS.
+const SQ_API = '/api/queue-metrics';
+const SQ_DEMO = new URLSearchParams(location.search).has('sqdemo');
+const SQ_REFRESH_MS = 30000;
+const sq = { env: 'ALL', view: 'list', pool: 'main', data: null, timer: null, loading: false };
+try { sq.view = localStorage.getItem('sq-view') || 'list'; sq.pool = localStorage.getItem('sq-pool') === 'adhoc' ? 'adhoc' : 'main'; } catch {}
+
+const sqEsc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const sqFull = (n) => n == null ? '—' : n.toLocaleString('en-US');
+function sqCompact(n) {
+  if (n == null) return '—';
+  if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 1 : 2).replace(/\.?0+$/, '') + 'M';
+  if (n >= 1e4) return Math.round(n / 1e3) + 'K';
+  return n.toLocaleString('en-US');
+}
+const sqM = (n) => (n / 1e6).toString() + 'M';
+// Messages waiting but no boxes running to process them
+const sqStarved = (q) => q.boxes_running === 0 && (q.available || 0) > 0;
+function sqColour(q, g) {
+  if (q.error) return 'err';
+  if (q.available > g.red) return 'red';
+  if (q.available >= g.yellow) return 'yellow';
+  return 'green';
+}
+function sqFmtDur(mins) {
+  if (mins < 1) return '<1 min';
+  if (mins < 60) return Math.round(mins) + ' min';
+  if (mins < 48 * 60) return (mins / 60).toFixed(mins < 600 ? 1 : 0).replace(/\.0$/, '') + ' h';
+  return Math.round(mins / 1440) + ' days';
+}
+// Positive net = backlog shrinking, negative = growing
+function sqTrend(q) {
+  if (q.processed_per_min == null || q.incoming_per_min == null) return '';
+  const net = q.processed_per_min - q.incoming_per_min;
+  if (!q.available && !q.incoming_per_min) return '';
+  if (net > 0) return `<span class="sq-trend down">Draining${q.available ? ', ~' + sqFmtDur(q.available / net) + ' to empty' : ''}</span>`;
+  if (net < 0) return `<span class="sq-trend up">Growing ${sqCompact(-net)}/min</span>`;
+  return `<span class="sq-trend">Steady</span>`;
+}
+// Adhoc queues: free = nothing waiting, nothing being worked on, nothing arriving
+const sqIsFree = (q) => !q.error && !q.available && !q.in_flight && !q.incoming_per_min;
+function sqFreeBadge(q) {
+  if (q.error) return `<span class="sq-tag">unknown</span>`;
+  return sqIsFree(q) ? `<span class="sq-tag free">Free</span>` : `<span class="sq-tag busy">In use</span>`;
+}
+const sqByFreeFirst = (a, b) => (sqIsFree(b) - sqIsFree(a)) || ((a.error ? 1 : 0) - (b.error ? 1 : 0)) ||
+  (((a.available || 0) + (a.in_flight || 0)) - ((b.available || 0) + (b.in_flight || 0)));
+
+function sqBoxCell(q) {
+  if (q.boxes_error) return `<td class="num err-txt" title="${sqEsc(q.boxes_error)}">n/a</td>`;
+  if (q.boxes_running == null) return `<td class="num"><span class="sq-unmapped" title="No boxes matched to this queue yet (see queue_boxes.json)">—</span></td>`;
+  const tip = `Running: ${q.boxes_running}${q.boxes_desired != null ? `, desired: ${q.boxes_desired}` : ''}\n${q.boxes_source || ''}`;
+  const short = q.boxes_desired != null && q.boxes_desired > q.boxes_running ? `<span class="of"> of ${q.boxes_desired}</span>` : '';
+  return `<td class="num boxes${sqStarved(q) ? ' starved' : ''}" title="${sqEsc(tip)}">${q.boxes_running}${short}${sqStarved(q) ? '<span class="sq-tag red">no boxes</span>' : ''}</td>`;
+}
+function sqRateCell(q, key) {
+  if (q.throughput_error) return `<td class="num err-txt" title="${sqEsc(q.throughput_error)}">n/a</td>`;
+  return `<td class="num">${q[key] == null ? '—' : sqFull(q[key])}</td>`;
+}
+
+async function sqLoad(force = false) {
+  if (sq.loading) return;
+  sq.loading = true;
+  const btn = document.getElementById('sq-refresh');
+  btn.disabled = true; btn.textContent = '↻ Refreshing…';
+  try {
+    const qs = new URLSearchParams();
+    if (SQ_DEMO) qs.set('demo', '1');
+    if (force) qs.set('refresh', '1');
+    const res = await fetch(SQ_API + (qs.toString() ? '?' + qs : ''));
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try { msg = (await res.json()).message || msg; } catch {}
+      throw new Error(`Couldn't load queue metrics — ${msg}`);
+    }
+    sq.data = await res.json();
+    sqRender();
+  } catch (e) {
+    document.getElementById('sq-rows').innerHTML = `<div class="sq-error">${sqEsc(e.message)}</div>`;
+    document.getElementById('sq-meta').textContent = 'Last refresh failed';
+  } finally {
+    sq.loading = false; btn.disabled = false; btn.textContent = '↻ Refresh now';
+  }
+}
+
+function sqSchedule() {
+  clearInterval(sq.timer);
+  if (document.getElementById('sq-auto').checked)
+    sq.timer = setInterval(() => { if (!document.hidden) sqLoad(); }, SQ_REFRESH_MS);
+}
+function sqStopSchedule() { clearInterval(sq.timer); sq.timer = null; }
+
+function sqRenderControls(adhocQs) {
+  const envs = ['ALL', ...(sq.data?.envs || ['NA', 'NA2', 'EU', 'CA'])];
+  document.getElementById('sq-env-seg').innerHTML = envs.map(e =>
+    `<div class="mode-pill${sq.env === e ? ' active' : ''}" data-sqenv="${e}">${e === 'ALL' ? 'All' : e}</div>`).join('');
+  document.querySelectorAll('[data-sqview]').forEach(b => b.classList.toggle('active', b.dataset.sqview === sq.view));
+  const nFree = (adhocQs || []).filter(sqIsFree).length;
+  document.querySelectorAll('[data-sqpool]').forEach(b => {
+    b.classList.toggle('active', b.dataset.sqpool === sq.pool);
+    if (b.dataset.sqpool === 'adhoc') b.textContent = adhocQs?.length ? `Adhoc queues (${nFree} free)` : 'Adhoc queues';
+  });
+}
+
+function sqRender() {
+  const d = sq.data; if (!d) { sqRenderControls(); return; }
+  const tpTimes = d.queues.map(q => q.throughput_at).filter(Boolean);
+  const tpAt = tpTimes.length ? new Date(Math.max(...tpTimes) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
+  document.getElementById('sq-meta').textContent = `${d.demo ? 'DEMO DATA · ' : ''}Updated ${new Date(d.fetched_at * 1000).toLocaleTimeString()}` +
+    (tpAt ? ` · throughput for the minute at ${tpAt}` : '') + (d.fetch_ms ? ` · fetched in ${(d.fetch_ms / 1000).toFixed(1)}s` : '');
+
+  const groups = Object.fromEntries(d.groups.map(g => [g.id, g]));
+  const isAdhoc = (q) => !!groups[q.group]?.adhoc;
+  const mainQs = d.queues.filter(q => !isAdhoc(q)), adhocQs = d.queues.filter(isAdhoc);
+  sqRenderControls(adhocQs);
+
+  // Nav-tab dot tracks the main pipeline only
+  const all = { red: 0, yellow: 0, green: 0, err: 0 };
+  mainQs.forEach(q => all[sqColour(q, groups[q.group])]++);
+  const noBoxAll = mainQs.filter(sqStarved).length;
+  const dot = document.getElementById('sq-nav-dot');
+  dot.className = 'sq-nav-dot ' + (all.red || noBoxAll ? 'red' : all.yellow ? 'yellow' : all.err ? '' : 'green');
+  dot.title = [all.red && `${all.red} red`, all.yellow && `${all.yellow} yellow`, noBoxAll && `${noBoxAll} without boxes`, all.err && `${all.err} unreadable`].filter(Boolean).join(', ') || `All ${mainQs.length} green`;
+
+  const pool = sq.pool === 'adhoc' ? adhocQs : mainQs;
+  const visible = pool.filter(q => sq.env === 'ALL' || q.env === sq.env);
+  if (sq.pool === 'adhoc') { sqRenderAdhoc(d, groups, visible); return; }
+
+  const counts = { red: 0, yellow: 0, green: 0, err: 0 };
+  visible.forEach(q => counts[sqColour(q, groups[q.group])]++);
+  const nStarved = visible.filter(sqStarved).length;
+  document.getElementById('sq-status').innerHTML =
+    `<div class="sq-count red"><b>${counts.red}</b> red</div>` +
+    `<div class="sq-count yellow"><b>${counts.yellow}</b> yellow</div>` +
+    `<div class="sq-count green"><b>${counts.green}</b> green</div>` +
+    (counts.err ? `<div class="sq-count err"><b>${counts.err}</b> couldn't be read</div>` : '') +
+    (nStarved ? `<div class="sq-count red"><b>${nStarved}</b> with messages but no boxes</div>` : '');
+
+  const byLoad = (a, b) => (b.available ?? -1) - (a.available ?? -1);
+  const section = (title, sub, qs, combined) => {
+    const sum = (k) => qs.reduce((s, q) => s + (q[k] || 0), 0);
+    const anyB = qs.some(q => q.boxes_running != null);
+    const body = sq.view === 'list' ? sqListHTML(qs, groups, combined) : sqTilesHTML(qs, groups, combined);
+    return `<section class="sq-row">
+      <div class="sq-row-head"><h3>${title}</h3>
+        <span class="tot"><b>${sqCompact(sum('available'))}</b> available · <b>${sqCompact(sum('in_flight'))}</b> in flight · ${anyB ? `<b>${sqFull(sum('boxes_running'))}</b> boxes · ` : ''}<b>${sqCompact(sum('processed_per_min'))}</b>/min processed · <b>${sqCompact(sum('incoming_per_min'))}</b>/min incoming</span>
+        ${sub ? `<span class="rule">${sub}</span>` : ''}
+      </div>${body}</section>`;
+  };
+
+  let html = '';
+  if (sq.env === 'ALL') {
+    html = section('All queues', "Colours use each service's own thresholds", [...visible].sort(byLoad), true);
+  } else {
+    for (const g of d.groups) {
+      const qs = visible.filter(q => q.group === g.id).sort(byLoad);
+      if (!qs.length) continue;
+      html += section(g.label, `red > ${sqM(g.red)} · yellow ${sqM(g.yellow)}–${sqM(g.red)} · green < ${sqM(g.yellow)}`, qs, false);
+    }
+  }
+  document.getElementById('sq-rows').innerHTML = html || `<div class="sq-empty">No queues for this environment.</div>`;
+}
+
+function sqRenderAdhoc(d, groups, visible) {
+  const free = visible.filter(sqIsFree).length, err = visible.filter(q => q.error).length;
+  document.getElementById('sq-status').innerHTML =
+    `<div class="sq-count green"><b>${free}</b> free</div>` +
+    `<div class="sq-count yellow"><b>${visible.length - free - err}</b> in use</div>` +
+    (err ? `<div class="sq-count err"><b>${err}</b> couldn't be read</div>` : '');
+  let html = '';
+  for (const g of d.groups.filter(g => g.adhoc)) {
+    const qs = visible.filter(q => q.group === g.id).sort(sqByFreeFirst);
+    if (!qs.length) continue;
+    const body = sq.view === 'list' ? sqListHTML(qs, groups, false, true) : sqTilesHTML(qs, groups, false, true);
+    html += `<section class="sq-row">
+      <div class="sq-row-head"><h3>${g.label}</h3>
+        <span class="tot"><b>${qs.filter(sqIsFree).length}</b> of ${qs.length} free · <b>${sqCompact(qs.reduce((s, q) => s + (q.available || 0), 0))}</b> available · <b>${sqCompact(qs.reduce((s, q) => s + (q.in_flight || 0), 0))}</b> in flight</span>
+      </div>${body}</section>`;
+  }
+  document.getElementById('sq-rows').innerHTML = html || `<div class="sq-empty">No adhoc queues for this environment.</div>`;
+}
+
+function sqTilesHTML(qs, groups, combined, adhoc = false) {
+  return `<div class="sq-grid">${qs.map(q => {
+    const g = groups[q.group], c = sqColour(q, g);
+    return `<button type="button" class="sq-tile ${c}" data-squrl="${sqEsc(q.url)}"
+              title="${sqEsc(q.name)}\nAvailable: ${sqFull(q.available)}\nIn flight: ${sqFull(q.in_flight)}">
+      <div class="nm"><b>${q.env}</b> ${combined ? sqEsc(g.label) + ' ' : ''}${sqEsc(q.short)}</div>
+      ${adhoc ? `<div class="st">${sqFreeBadge(q)}</div>` : ''}
+      <div class="av">${q.error ? sqEsc(q.error) : sqCompact(q.available)}</div>
+      <div class="fl">${q.error ? '&nbsp;' : sqCompact(q.in_flight) + ' in flight'}</div>
+      ${q.processed_per_min != null ? `<div class="tp">${sqCompact(q.processed_per_min)}/min out · ${sqCompact(q.incoming_per_min)}/min in</div>` : ''}
+      ${q.boxes_running != null ? `<div class="tp${sqStarved(q) ? ' starved' : ''}">${q.boxes_running} ${q.boxes_running === 1 ? 'box' : 'boxes'} running</div>` : ''}</button>`;
+  }).join('')}</div>`;
+}
+
+function sqListHTML(qs, groups, combined, adhoc = false) {
+  const rows = qs.map(q => {
+    const g = groups[q.group], c = sqColour(q, g);
+    const pct = q.error ? 0 : Math.min(100, (q.available / (g.red * 1.25)) * 100); // full a bit past red
+    return `<tr class="${c}" data-squrl="${sqEsc(q.url)}" title="Click to copy queue URL">
+      <td class="env">${q.env}</td>
+      ${adhoc ? `<td>${sqFreeBadge(q)}</td>` : ''}
+      ${combined ? `<td>${sqEsc(g.label)}</td>` : ''}
+      <td>${sqEsc(q.name)}</td>
+      ${q.error
+        ? `<td class="num err-txt" colspan="2" title="${sqEsc(q.error)}">${sqEsc(q.error)}</td>`
+        : `<td class="num av">${sqFull(q.available)}</td><td class="num">${sqFull(q.in_flight)}</td>`}
+      ${sqBoxCell(q)}
+      ${sqRateCell(q, 'processed_per_min')}${sqRateCell(q, 'incoming_per_min')}
+      <td>${sqTrend(q)}</td>
+      <td><div class="sq-bar"><span class="${c}" style="width:${pct}%"></span></div></td>
+    </tr>`;
+  }).join('');
+  return `<div class="sq-tbl-wrap"><table class="sq-tbl">
+    <thead><tr><th>Env</th>${adhoc ? '<th>Status</th>' : ''}${combined ? '<th>Service</th>' : ''}<th>Queue</th><th class="num">Available</th><th class="num">In flight</th><th class="num">Boxes</th><th class="num">Processed/min</th><th class="num">Incoming/min</th><th>Trend</th><th>Load</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
+document.addEventListener('click', async (e) => {
+  const envB = e.target.closest('[data-sqenv]');
+  if (envB) { sq.env = envB.dataset.sqenv; sqRender(); return; }
+  const poolB = e.target.closest('[data-sqpool]');
+  if (poolB) { sq.pool = poolB.dataset.sqpool; try { localStorage.setItem('sq-pool', sq.pool); } catch {} sqRender(); return; }
+  const viewB = e.target.closest('[data-sqview]');
+  if (viewB) { sq.view = viewB.dataset.sqview; try { localStorage.setItem('sq-view', sq.view); } catch {} sqRender(); return; }
+  const row = e.target.closest('[data-squrl]');
+  if (row) {
+    try { await navigator.clipboard.writeText(row.dataset.squrl); } catch {}
+    const meta = document.getElementById('sq-meta'), prev = meta.textContent;
+    meta.textContent = 'Copied: ' + row.dataset.squrl;
+    setTimeout(() => { if (meta.textContent.startsWith('Copied:')) meta.textContent = prev; }, 1800);
+  }
+});
+document.addEventListener('DOMContentLoaded', () => {
+  sqRenderControls();
+  document.getElementById('sq-auto').addEventListener('change', () => {
+    if (document.querySelector('.nav-tab.active')?.dataset.tab === 'sqsqueues') sqSchedule();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && document.querySelector('.nav-tab.active')?.dataset.tab === 'sqsqueues' && document.getElementById('sq-auto').checked) sqLoad();
+  });
+});
 
 // ─── SHARED BATCH HELPER ───────────────────────────────────────
 // Splits an array into fixed-size chunks, e.g. chunkArray([1..1000], 500) -> [[1..500],[501..1000]]
@@ -3430,156 +3743,11 @@ const HER_ENV_CONFIG = {
 
 let herCurrentEnv = 'NA2';
 let herForcedRevoke = true;
-let herRetryFalse = true;   // adds retry=false to the revoke call (default on = what it always sent)
 let herIdMode = 'single';   // 'single' | 'file'
 let herLoadedIds = [];      // parsed from uploaded file
 let herCurrentFileSignature = null; // identifies the uploaded file for checkpoint save/resume — null for a synthetic list (e.g. loaded via "Retry Failed")
 let herLastCheckpoint = null;       // the checkpoint fetched for the currently-loaded file, if any
 let herNotifyPermissionAsked = false;
-
-// ── Starburst lookup ─────────────────────────────────────────────
-// Fetches candidate notification IDs, shows a count + sample, and only loads
-// them into the revoke list (herLoadedIds) when the operator clicks "Load".
-// Same shape as the "Retry Failed" loader — a synthetic list, so no checkpoint
-// signature. Revoking still requires the normal start button.
-let herSbPending = null;
-let herSbLast = null;   // most recent fetch, kept after loading so the validation CSV can still be downloaded
-let herSbLoadedEnv = null;   // environment the IDs currently in the list were fetched from (null = not from Starburst)
-
-let herSbStatusSeq = 0;   // ignores a slow check if the env or login changed meanwhile
-
-// Status line: with a personal login typed in, actually connects (SELECT 1) and
-// reports "connected as ..." or the error; otherwise says whether the server has
-// a shared account for this environment. Re-runs when the env or login changes.
-async function herStarburstRefreshStatus() {
-  const el = document.getElementById('her-sb-status');
-  if (!el) return;
-  const seq = ++herSbStatusSeq;
-  const env = herCurrentEnv;
-  const user = (document.getElementById('her-sb-user')?.value || '').trim();
-  const pass = document.getElementById('her-sb-pass')?.value || '';
-  try {
-    if (user && pass) {
-      el.innerHTML = `<span style="color:var(--muted);">● checking ${herEscapeAttr(env)} login...</span>`;
-      const resp = await fetch('/api/her/starburst/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({ env, starburst_user: user, starburst_password: pass }),
-      });
-      const data = await resp.json();
-      if (seq !== herSbStatusSeq) return;
-      el.innerHTML = (resp.ok && data.status === 'ok')
-        ? `<span style="color:var(--success);">● ${herEscapeAttr(env)} connected</span> as ${herEscapeAttr(data.user)} · ${herEscapeAttr(data.catalog)}`
-        : `<span style="color:var(--danger);">● ${herEscapeAttr(env)} login failed</span> — ${herEscapeAttr((data.message || 'HTTP ' + resp.status).slice(0, 220))}`;
-      return;
-    }
-    const resp = await fetch('/api/her/starburst/status', { credentials: 'same-origin' });
-    const data = await resp.json();
-    if (seq !== herSbStatusSeq) return;
-    const info = data.status === 'ok' ? data.envs[env] : null;
-    if (!info) { el.textContent = ''; return; }
-    el.innerHTML = info.configured
-      ? `<span style="color:var(--success);">● ${env}: shared account set</span> · ${info.catalog}`
-      : `<span style="color:var(--warn);">● ${env}: enter your Starburst login below</span> · ${info.catalog}`;
-  } catch (e) { if (seq === herSbStatusSeq) el.textContent = ''; }
-}
-
-async function herStarburstFetch() {
-  const pilot = document.getElementById('her-sb-pilot').value.trim();
-  const start = document.getElementById('her-sb-start').value;
-  const end = document.getElementById('her-sb-end').value;
-  const startTime = document.getElementById('her-sb-start-time').value;
-  const endTime = document.getElementById('her-sb-end-time').value;
-  const out = document.getElementById('her-sb-result');
-  const btn = document.getElementById('her-sb-fetch-btn');
-  if (!pilot || !start || !end) { alert('Enter a pilot ID and both dates first.'); return; }
-  herSbPending = null;
-  out.style.display = 'block';
-  out.textContent = 'Querying Starburst...';
-  btn.disabled = true;
-  try {
-    const resp = await fetch('/api/her/starburst/fetch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({
-        env: herCurrentEnv, pilot_id: pilot, start_date: start, end_date: end,
-        start_time: startTime || undefined, end_time: endTime || undefined,
-        starburst_user: document.getElementById('her-sb-user').value.trim() || undefined,
-        starburst_password: document.getElementById('her-sb-pass').value || undefined,
-      }),
-    });
-    const data = await resp.json();
-    if (!resp.ok || data.status !== 'ok') {
-      out.innerHTML = `<span style="color:var(--danger);">${herEscapeAttr(data.message || ('HTTP ' + resp.status))}</span>`;
-      return;
-    }
-    if (!data.count) {
-      out.innerHTML = 'No GENERATED, un-revoked HER notifications found for that pilot and date range.';
-      return;
-    }
-    const rangeLabel = `${start}${startTime ? ' ' + startTime : ''} → ${end}${endTime ? ' ' + endTime : ''}`;
-    herSbPending = { env: herCurrentEnv, ids: data.ids, userIds: data.user_ids || [], pilot, start, end, rangeLabel,
-                     fileTag: `${start}${startTime ? 'T' + startTime.replace(':', '') : ''}_to_${end}${endTime ? 'T' + endTime.replace(':', '') : ''}` };
-    herSbLast = herSbPending;
-    const sample = data.ids.slice(0, 3).map((i, n) =>
-      `<div>${herEscapeAttr(i)}<span style="color:var(--muted);"> · user ${herEscapeAttr((data.user_ids || [])[n] || '—')}</span></div>`).join('');
-    out.innerHTML = `<div style="color:var(--accent2);">${data.count.toLocaleString()} notification(s) found · pilot ${herEscapeAttr(pilot)} · ${rangeLabel} UTC · ${herCurrentEnv}</div>`
-      + sample + (data.count > 3 ? `<div>... and ${(data.count - 3).toLocaleString()} more</div>` : '')
-      + `<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">`
-      + `<button class="btn btn-outline btn-sm" onclick="herStarburstLoad()">Load ${data.count.toLocaleString()} into the list</button>`
-      + `<button class="btn btn-outline btn-sm" onclick="herStarburstDownload()">⬇ Download with user UUIDs (to validate)</button></div>`
-      + `<div style="margin-top:6px;">Only the notification IDs are loaded for revoking — the user UUIDs are just for checking.</div>`;
-  } catch (err) {
-    out.innerHTML = `<span style="color:var(--danger);">Request failed: ${herEscapeAttr(err.message)}</span>`;
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-function herStarburstLoad() {
-  if (!herSbPending) return;
-  // Safety: these IDs belong to the environment they were fetched in. Never load
-  // them while a different environment is selected (the revoke goes to the selected one).
-  if (herSbPending.env !== herCurrentEnv) {
-    herSbPending = null;
-    document.getElementById('her-sb-result').innerHTML =
-      '<span style="color:var(--danger);">Environment changed since this fetch — fetch again for ' + herEscapeAttr(herCurrentEnv) + '.</span>';
-    return;
-  }
-  const { ids, pilot, start, end, rangeLabel, fileTag } = herSbPending;
-  herSbLoadedEnv = herCurrentEnv;
-  herLoadedIds = ids.slice();
-  herCurrentFileSignature = null;
-  document.getElementById('her-resume-card').style.display = 'none';
-  herLastCheckpoint = null;
-  document.getElementById('her-param-filename').value = `starburst_${pilot}_${fileTag}.csv`;
-  document.getElementById('her-param-skip').value = 0;
-  const preview = document.getElementById('her-id-file-preview');
-  preview.style.display = 'block';
-  preview.innerHTML = herLoadedIds.slice(0, 5).map(l => `<div>${herEscapeAttr(l)}</div>`).join('')
-    + `<div style="color:var(--accent);margin-top:2px;">${herLoadedIds.length.toLocaleString()} ID(s) loaded from Starburst (pilot ${herEscapeAttr(pilot)}, ${rangeLabel} UTC) — review, then start the run</div>`;
-  herSbPending = null;
-  document.getElementById('her-sb-result').innerHTML =
-    `<div style="color:var(--accent2);">${ids.length.toLocaleString()} notification ID(s) loaded into the list (user UUIDs not included).</div>`
-    + `<button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="herStarburstDownload()">⬇ Download with user UUIDs (to validate)</button>`;
-  herUpdatePreview();
-}
-
-// Validation aid only: notification_id,user_id for the last fetch. Not what gets revoked.
-function herStarburstDownload() {
-  const f = herSbLast;
-  if (!f) return;
-  const rows = ['notification_id,user_id'].concat(f.ids.map((id, n) => `${id},${f.userIds[n] || ''}`));
-  const blob = new Blob([rows.join('\n') + '\n'], { type: 'text/csv' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `starburst_${f.pilot}_${f.fileTag}_with_user_ids.csv`;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
-}
 
 // ── Revoke access token (admin-managed, write-only) ─────────────
 function herFormatTokenStatus(data) {
@@ -3831,25 +3999,8 @@ async function herSaveToken() {
 function herSelectEnv(el, env) {
   document.querySelectorAll('#her-env-selector .env-btn').forEach(b => b.classList.remove('active'));
   el.classList.add('active');
-  const envChanged = herCurrentEnv !== env;
   herCurrentEnv = env;
-  if (envChanged) {
-    // A Starburst fetch / loaded list belongs to the environment it came from — drop it
-    // so IDs from one environment can never be revoked against another.
-    herSbPending = null;
-    const sbOut = document.getElementById('her-sb-result');
-    if (sbOut) { sbOut.innerHTML = ''; sbOut.style.display = 'none'; }
-    if (herSbLoadedEnv && herSbLoadedEnv !== env) {
-      herLoadedIds = [];
-      herSbLoadedEnv = null;
-      const pv = document.getElementById('her-id-file-preview');
-      if (pv) { pv.innerHTML = ''; pv.style.display = 'none'; }
-      const fn = document.getElementById('her-param-filename');
-      if (fn) fn.value = '';
-    }
-  }
   herUpdatePreview();
-  herStarburstRefreshStatus();
 }
 
 // Same as herSelectEnv, but driven by the env code alone (e.g. from a "Retry
@@ -3874,12 +4025,6 @@ function herToggleForced() {
   herUpdatePreview();
 }
 
-function herToggleRetry() {
-  herRetryFalse = !herRetryFalse;
-  document.getElementById('her-retry-toggle').classList.toggle('on', herRetryFalse);
-  herUpdatePreview();
-}
-
 // Identifies an uploaded file for checkpoint save/resume purposes. Deliberately
 // simple (name + size) rather than hashing the whole file client-side, which
 // would be slow for a 600k-line CSV — this is advisory only (it powers a
@@ -3900,7 +4045,6 @@ function herHandleFile(e) {
   reader.onload = (ev) => {
     const lines = ev.target.result.split('\n').map(l => l.trim()).filter(Boolean);
     herLoadedIds = [...new Set(lines)]; // de-dupe, same as the old script's pandas unique()
-    herSbLoadedEnv = null;   // a manual upload is not tied to a Starburst fetch
     const preview = document.getElementById('her-id-file-preview');
     preview.style.display = 'block';
     const shown = herLoadedIds.slice(0, 5);
@@ -3969,7 +4113,6 @@ async function herRetryFailedIds(runId, ticket, env) {
       return;
     }
     herLoadedIds = data.entries.map(en => en.notification_id).filter(Boolean);
-    herSbLoadedEnv = null;
     herCurrentFileSignature = null; // synthetic list, not a real uploaded file — no checkpoint tracking
     document.getElementById('her-resume-card').style.display = 'none';
     herLastCheckpoint = null;
@@ -4005,7 +4148,7 @@ function herUpdatePreview() {
   const idForPreview = herIdMode === 'single'
     ? (document.getElementById('her-param-id-single')?.value.trim() || '{notification_id}')
     : (herLoadedIds[herSkipCount] || herLoadedIds[0] || '{notification_id}');
-  const url = `http://${host}/2.1/notifications-revoke/notifications/${idForPreview}?forcedRevoke=${herForcedRevoke}${herRetryFalse ? '&retry=false' : ''}&access_token=***`;
+  const url = `http://${host}/2.1/notifications-revoke/notifications/${idForPreview}?forcedRevoke=${herForcedRevoke}&retry=false&access_token=***`;
   const herRemainingCount = Math.max(0, herLoadedIds.length - herSkipCount);
   const lines = [
     `POST ${url}`,
@@ -4109,7 +4252,6 @@ async function herDispatchRun() {
   appendLog(`[INFO]  Environment: ${herCurrentEnv}`);
   appendLog(`[INFO]  Mode: ${herIdMode === 'single' ? `single ID — ${ids[0]}` : `file — ${ids.length} record(s)${skipCount ? ` (skipped first ${skipCount} of ${herLoadedIds.length})` : ''}`}`);
   appendLog(`[INFO]  forcedRevoke: ${herForcedRevoke}`);
-  appendLog(`[INFO]  retry=false: ${herRetryFalse ? 'sent' : 'omitted'}`);
   appendLog(`[INFO]  Batching: ${ids.length} record(s) into ~${approxBatches} batch(es) of up to ${batchSize}, ${threads} thread(s) each`);
   appendLog(`[INFO]  This run executes on the server, not this tab — reloading or closing this page won't stop it. Revocation History below tracks it either way.`);
   setProgress(0, 'Starting…');
@@ -4129,7 +4271,6 @@ async function herDispatchRun() {
         ticket_number: ticketNumber,
         notification_ids: ids,
         forced_revoke: herForcedRevoke,
-        retry_false: herRetryFalse,
         threads,
         batch_size: batchSize,
         file_signature: herIdMode === 'file' ? herCurrentFileSignature : null,

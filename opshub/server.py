@@ -80,6 +80,8 @@ except ImportError:
 # HER Revocation lives in its own script (her_revocation.py, next to this file) —
 # it's a standalone module you can also run by hand from the command line, and
 # this server just imports it rather than duplicating its logic inline.
+import sqs_monitor
+
 from her_revocation import (
     REVOKE_API_CONFIG, get_env_token as get_her_revoke_token, revoke_many,
     get_token_status, set_token as set_her_revoke_token,
@@ -93,11 +95,6 @@ from her_revocation import (
     reconcile_orphaned_run as reconcile_her_orphaned_run,
     reconcile_orphaned_runs_on_startup as reconcile_her_orphaned_runs_on_startup,
 )
-
-# Starburst/Trino lookup of HER notification IDs (see starburst_ids.py). The
-# `trino` package is imported lazily inside that module, so this import can't
-# take the app down even if the package is missing.
-import starburst_ids
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 log = logging.getLogger(__name__)
@@ -585,13 +582,13 @@ _xacct_clients = {}
 _xacct_lock = threading.Lock()
 
 
-def _get_cross_account_client(service, role_arn, region, env):
+def _get_cross_account_client(service, role_arn, region, env, config=None):
     """Reusable, auto-refreshing boto3 client ('sqs' or 'sns') for a destination
     account. Cached per (service, role, region), so AGG, DISAGG and Rate Comparison
     for the same destination share one assumed-role SQS session, and NSM Disagg
     shares one SNS session. boto3 clients are thread-safe, and RefreshableCredentials
     serializes its own refresh, so the dispatch thread pools can share it safely."""
-    key = (service, role_arn, region)
+    key = (service, role_arn, region, id(config) if config else None)
     with _xacct_lock:
         client = _xacct_clients.get(key)
         if client is None:
@@ -602,7 +599,7 @@ def _get_cross_account_client(service, role_arn, region, env):
             )
             bc_session = get_botocore_session()
             bc_session._credentials = credentials   # standard way to plug in refreshable assume-role creds
-            client = boto3.Session(botocore_session=bc_session, region_name=region).client(service)
+            client = boto3.Session(botocore_session=bc_session, region_name=region).client(service, config=config)
             _xacct_clients[key] = client
     return client
 
@@ -670,6 +667,31 @@ def get_sns_client(env):
                    f"{env.upper()}_DESTINATION_ROLE_ARN is not set — publishing with the source role, which only "
                    f"works if the topic's access policy allows it.")
     return _get_boto3_session(None, region).client('sns')
+
+
+_monitor_clients = {}
+_monitor_clients_lock = threading.Lock()
+
+
+def _sqs_monitor_client(cred, region, service, config):
+    """Client factory for sqs_monitor (the SQS Queues tab). Same identity rules as
+    dispatch: EU / CA go through <ENV>_DESTINATION_ROLE_ARN when it's set, everything
+    else (NA / NA2) uses the pod's own role. All read-only calls — the identity needs
+    sqs:GetQueueAttributes, cloudwatch:GetMetricData, autoscaling:DescribeAutoScalingGroups
+    and ec2:DescribeInstances in its own account."""
+    role_arn = _destination_role_arn(cred) if cred in ('EU', 'CA') else None
+    if role_arn:
+        return _get_cross_account_client(service, role_arn, region, cred, config)
+    key = (service, region)
+    with _monitor_clients_lock:
+        client = _monitor_clients.get(key)
+        if client is None:
+            client = boto3.Session(region_name=region).client(service, config=config)
+            _monitor_clients[key] = client
+    return client
+
+
+sqs_monitor.set_client_factory(_sqs_monitor_client)
 
 
 def build_queue_url(script_type, env, queue_name):
@@ -1042,6 +1064,29 @@ def dispatch_rate_comparison():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+# ─── SQS QUEUES (monitoring) ─────────────────────────────────────
+# Read-only view of queue depth / throughput / boxes — logic lives in sqs_monitor.py.
+# Results are cached for QM_CACHE_SECONDS (30s) and shared by everyone viewing the
+# tab, so AWS is hit at most twice a minute however many people have it open.
+SQS_MONITOR_MIN_FORCE_SECONDS = 10
+
+
+@app.route('/api/queue-metrics', methods=['GET'])
+@admin_or_ps_required
+def queue_metrics():
+    if request.args.get('demo'):
+        return jsonify(sqs_monitor.demo_metrics())
+    # "Refresh now" bypasses the cache, but not more than once every few seconds,
+    # so several people mashing the button can't fan out into hundreds of AWS calls.
+    force = (request.args.get('refresh') == '1'
+             and time.time() - sqs_monitor._cache['at'] >= SQS_MONITOR_MIN_FORCE_SECONDS)
+    try:
+        return jsonify(sqs_monitor.get_metrics(force=force))
+    except Exception as e:
+        log.exception('SQS queue metrics error')
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 # ─── HER REVOCATION ──────────────────────────────────────────────
 # The actual revoke logic, token storage, and audit log all live in
 # her_revocation.py — these routes are a thin admin-only wrapper around it.
@@ -1066,82 +1111,6 @@ def her_set_token():
         return jsonify({'status': 'error', 'message': str(e)}), 400
 
 
-@app.route('/api/her/starburst/status', methods=['GET'])
-@admin_or_ps_required
-def her_starburst_status():
-    """Which environments have Starburst credentials set on the server. Never
-    returns a credential value."""
-    return jsonify({'status': 'ok', 'envs': starburst_ids.get_status()})
-
-
-@app.route('/api/her/starburst/test', methods=['POST'])
-@admin_or_ps_required
-def her_starburst_test():
-    """Checks a Starburst login for one environment (SELECT 1). Reads no
-    notification data and never returns or logs the password."""
-    data = request.json or {}
-    env = (data.get('env') or '').strip()
-    if env not in REVOKE_API_CONFIG:
-        return jsonify({'status': 'error', 'message': f"Unknown environment '{env}'"}), 400
-    try:
-        info = starburst_ids.test_login(env, data.get('starburst_user'), data.get('starburst_password'))
-    except RuntimeError as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 503
-    except Exception as e:
-        log.warning(f'Starburst login test failed for {env}: {type(e).__name__}')
-        detail = f'{type(e).__name__}: {e}'.replace('\n', ' ')[:400]
-        if '401' in detail:
-            detail += (' — Starburst rejected the login. Use your Starburst email plus your role, '
-                       'e.g. you@bidgely.com/business_user, and the password you set from the invite email '
-                       '(not your Google SSO password)')
-        return jsonify({'status': 'error', 'message': detail}), 502
-    return jsonify({'status': 'ok', **info})
-
-
-@app.route('/api/her/starburst/fetch', methods=['POST'])
-@admin_or_ps_required
-def her_starburst_fetch():
-    """Looks up HER notification IDs (GENERATED, not already REVOKED) for one
-    pilot over a date range. Read-only: it only returns the IDs, nothing is
-    revoked here — the operator reviews the count and starts the run normally."""
-    data = request.json or {}
-    role = session['user']['role']
-    ok, err = check_dispatch_permission(role, 'her_revocation', '')
-    if not ok:
-        return jsonify({'status': 'error', 'message': err}), 403
-
-    env = (data.get('env') or '').strip()
-    if env not in REVOKE_API_CONFIG:
-        return jsonify({'status': 'error', 'message': f"Unknown environment '{env}'"}), 400
-
-    actor = session['user']['email']
-    try:
-        result = starburst_ids.fetch_her_notification_ids(
-            env, data.get('pilot_id'), data.get('start_date'), data.get('end_date'),
-            user=data.get('starburst_user'), password=data.get('starburst_password'),
-            start_time=data.get('start_time'), end_time=data.get('end_time'),
-        )
-    except ValueError as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 400
-    except RuntimeError as e:
-        log.error(f'Starburst lookup unavailable for {env}: {e}')
-        return jsonify({'status': 'error', 'message': str(e)}), 503
-    except Exception as e:
-        log.exception('Starburst lookup failed')
-        # Show the database's own error so a failed lookup can be diagnosed from the
-        # page. It's the exception text only — credentials are never part of it.
-        detail = f'{type(e).__name__}: {e}'.replace('\n', ' ')[:400]
-        if '401' in detail:
-            detail += (' — Starburst rejected the login. Use your Starburst email plus your role, '
-                       'e.g. you@bidgely.com/business_user, and the password you set from the invite email '
-                       '(not your Google SSO password)')
-        return jsonify({'status': 'error', 'message': f'Starburst query failed — {detail}'}), 502
-
-    log.info(f"Starburst HER lookup by {actor}: env={env} pilot={data.get('pilot_id')} "
-             f"{data.get('start_date')}..{data.get('end_date')} -> {result['count']} ids")
-    return jsonify({'status': 'ok', **result})
-
-
 @app.route('/dispatch/her_revocation', methods=['POST'])
 @admin_or_ps_required
 def dispatch_her_revocation():
@@ -1154,7 +1123,6 @@ def dispatch_her_revocation():
     env               = data.get('env', 'NA2')
     notification_ids  = data['notification_ids']   # list of notification-id strings
     forced_revoke     = data.get('forced_revoke', True)
-    retry_false       = bool(data.get('retry_false', True))
     threads           = data.get('threads', 2)
     ticket_number     = (data.get('ticket_number') or '').strip()
     record_audit      = data.get('record_audit', True)
@@ -1175,8 +1143,7 @@ def dispatch_her_revocation():
     try:
         # revoke_many (from her_revocation.py) does the actual work — threaded
         # calls against the external API, with a built-in single retry per id.
-        results = revoke_many(notification_ids, token, env=env, forced_revoke=forced_revoke, threads=threads,
-                              retry_false=retry_false)
+        results = revoke_many(notification_ids, token, env=env, forced_revoke=forced_revoke, threads=threads)
         already_done = results.get('already_done', [])
         log.info(f'HER revoke by {actor} complete — sent={len(results["sent"])} already_done={len(already_done)} failed={len(results["failed"])}')
 
@@ -1326,7 +1293,6 @@ def her_run_start():
         return jsonify({'status': 'error', 'message': 'No revoke token configured on the server — ask an admin to set today\'s token'}), 500
 
     forced_revoke = bool(data.get('forced_revoke', True))
-    retry_false = bool(data.get('retry_false', True))
     try:
         threads = max(1, int(data.get('threads', 2)))
     except (TypeError, ValueError):
@@ -1343,13 +1309,12 @@ def her_run_start():
 
     actor = session['user']['email']
     log.info(f'HER background revoke started by {actor} — ticket={ticket_number} env={env} '
-             f'count={len(notification_ids)} batch_size={batch_size} threads={threads} '
-             f'forced_revoke={forced_revoke} retry_false={retry_false}')
+             f'count={len(notification_ids)} batch_size={batch_size} threads={threads}')
     try:
         run_id = start_her_background_run(
             actor=actor, ticket=ticket_number, env=env, notification_ids=notification_ids,
             token=token, forced_revoke=forced_revoke, threads=threads, batch_size=batch_size,
-            file_signature=file_signature, skip_count=skip_count, retry_false=retry_false,
+            file_signature=file_signature, skip_count=skip_count,
         )
     except Exception:
         log.exception('Failed to start HER background run')

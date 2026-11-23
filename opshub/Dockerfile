@@ -17,20 +17,20 @@ COPY index.html .
 # her_revocation.py backs the HER Revocation tab — server.py imports it directly,
 # so the app won't even start without this file present in the image.
 COPY her_revocation.py .
-# starburst_ids.py backs the HER tab's "Fetch from Starburst" lookup — server.py
-# imports it at startup, so leaving it out of the image crashes the whole app
-# with a ModuleNotFoundError (same failure mode as her_revocation.py above).
-COPY starburst_ids.py .
+# sqs_monitor.py backs the SQS Queues tab (also imported by server.py at startup);
+# queue_boxes.json maps each queue to the EC2 instances that process it.
+COPY sqs_monitor.py .
+COPY queue_boxes.json .
 
 # Flask app listens on 8080 (matches the Google OAuth redirect URI already
 # registered as http://localhost:8080/auth/callback)
 EXPOSE 8080
 
 # Runs as a non-root user for basic container hygiene. her_revocation.py writes
-# two files next to itself at runtime — .her_revoke_token.json (today's shared
-# revoke token) and her_revocation_audit.db (the revocation audit log) — so
-# appuser needs write access to /app, not just read, or both will fail with a
-# PermissionError the first time anyone uses the HER Revocation tab.
+# .her_revoke_token.json (today's shared revoke token) next to itself at runtime
+# (the audit log lives in S3 now) — so
+# appuser needs write access to /app, not just read, or it will fail with a
+# PermissionError the first time anyone saves a token in the HER Revocation tab.
 RUN useradd --create-home appuser && chown -R appuser:appuser /app
 USER appuser
 

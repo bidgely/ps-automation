@@ -1,0 +1,376 @@
+{
+  "_how_to": [
+    "Maps each queue to the EC2 instances that process it. Queue names aren't case-sensitive.",
+    "ec2_name: the instance Name tag (* wildcards allowed, or a list of names).",
+    "env: prod-na, prod-na-2, prod-eu or prod-ca. Picks the AWS account/region, and only counts instances",
+    "  tagged with that environment (prodna / prodna2 etc.), so NA and NA2 boxes with the same Name are kept apart.",
+    "  Add \"match_env_tag\": false to an entry to count by Name only.",
+    "Or map to Auto Scaling Groups instead:  \"<queue name>\": {\"asg\": [\"<asg name>\"]}",
+    "Run: python3 sqs_monitor.py boxes   to check every queue's count.",
+    "Keys starting with _ are ignored."
+  ],
+  "GBUserDataIngestion-prod-na": {
+    "ec2_name": "ingesterjobs-spot",
+    "env": "prod-na"
+  },
+  "AggregationReadyUsers-prod-na": {
+    "ec2_name": "aggregations-spot",
+    "env": "prod-na"
+  },
+  "AggregationReadyUsers-prod-na-01": {
+    "ec2_name": "aggregations-prodna-01-spot",
+    "env": "prod-na"
+  },
+  "AggregationReadyUsers-prod-na-02": {
+    "ec2_name": "aggregations-prodna-02-spot",
+    "env": "prod-na"
+  },
+  "AggregationReadyUsers-prod-na-03": {
+    "ec2_name": "aggregations-prodna-03-spot",
+    "env": "prod-na"
+  },
+  "AggregationReadyUsers-prod-na-04": {
+    "ec2_name": "aggregations-prodna-04-spot",
+    "env": "prod-na"
+  },
+  "AggregationReadyUsers-prod-na-07": {
+    "ec2_name": "aggregations-prodna-07-spot",
+    "env": "prod-na"
+  },
+  "AggregationReadyUsers-prod-na-08": {
+    "ec2_name": "aggregations-prodna-08-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na": {
+    "ec2_name": "pyamidisagg-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-0": {
+    "ec2_name": "pyamidisagg-prodna-0-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-00": {
+    "ec2_name": "pyamidisagg-prodna-00-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-01": {
+    "ec2_name": "pyamidisagg-prodna-01-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-010": {
+    "ec2_name": "pyamidisagg-prodna-010-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-011": {
+    "ec2_name": "pyamidisagg-prodna-011-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-012": {
+    "ec2_name": "pyamidisagg-prodna-012-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-013": {
+    "ec2_name": "pyamidisagg-prodna-013-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-014": {
+    "ec2_name": "pyamidisagg-prodna-014-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-015": {
+    "ec2_name": "pyamidisagg-prodna-015-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-02": {
+    "ec2_name": "pyamidisagg-prodna-02-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-03": {
+    "ec2_name": "pyamidisagg-prodna-03-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-04": {
+    "ec2_name": "pyamidisagg-prodna-04-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-05": {
+    "ec2_name": "pyamidisagg-prodna-05-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-06": {
+    "ec2_name": "pyamidisagg-prodna-06-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-07": {
+    "ec2_name": "pyamidisagg-prodna-07-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-08": {
+    "ec2_name": "pyamidisagg-prodna-08-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-09": {
+    "ec2_name": "pyamidisagg-prodna-09-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-1": {
+    "ec2_name": "pyamidisagg-prodna-1-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-10": {
+    "ec2_name": "pyamidisagg-prodna-10-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-11": {
+    "ec2_name": "pyamidisagg-prodna-11-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-12": {
+    "ec2_name": "pyamidisagg-prodna-12-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-13": {
+    "ec2_name": "pyamidisagg-prodna-13-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-14": {
+    "ec2_name": "pyamidisagg-prodna-14-spot",
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-15": {
+    "ec2_name": "pyamidisagg-prodna-15-spot",
+    "env": "prod-na"
+  },
+  "GenericEventData-prod-na": {
+    "ec2_name": "emailers-spot",
+    "env": "prod-na"
+  },
+  "PdfGeneration-prod-na": {
+    "ec2_name": "pdfgenerationservice-spot",
+    "env": "prod-na"
+  },
+  "NotificationsProcessorEvent-prod-na": {
+    "ec2_name": "notificationsprocessorservice-spot",
+    "env": "prod-na"
+  },
+  "GBUserDataIngestion-prod-na-2": {
+    "ec2_name": "ingesterjobs-spot",
+    "env": "prod-na-2"
+  },
+  "AggregationReadyUsers-prod-na-2": {
+    "ec2_name": "aggregations-spot",
+    "env": "prod-na-2"
+  },
+  "AggregationReadyUsers-prod-na-2-01": {
+    "ec2_name": "aggregations-prodna2-01-spot",
+    "env": "prod-na-2"
+  },
+  "AggregationReadyUsers-prod-na-2-02": {
+    "ec2_name": "aggregations-prodna2-02-spot",
+    "env": "prod-na-2"
+  },
+  "AggregationReadyUsers-prod-na-2-03": {
+    "ec2_name": "aggregations-prodna2-03-spot",
+    "env": "prod-na-2"
+  },
+  "AggregationReadyUsers-prod-na-2-04": {
+    "ec2_name": "aggregations-prodna2-04-spot",
+    "env": "prod-na-2"
+  },
+  "AggregationReadyUsers-prod-na-2-05": {
+    "ec2_name": "aggregations-prodna2-05-spot",
+    "env": "prod-na-2"
+  },
+  "AggregationReadyUsers-prod-na-2-08": {
+    "ec2_name": "aggregations-prodna2-08-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2": {
+    "ec2_name": "pyamidisagg-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-0": {
+    "ec2_name": "pyamidisagg-prodna2-0-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-00": {
+    "ec2_name": "pyamidisagg-prodna2-00-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-01": {
+    "ec2_name": "pyamidisagg-prodna2-01-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-010": {
+    "ec2_name": "pyamidisagg-prodna2-010-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-011": {
+    "ec2_name": "pyamidisagg-prodna2-011-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-012": {
+    "ec2_name": "pyamidisagg-prodna2-012-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-013": {
+    "ec2_name": "pyamidisagg-prodna2-013-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-014": {
+    "ec2_name": "pyamidisagg-prodna2-014-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-015": {
+    "ec2_name": "pyamidisagg-prodna2-015-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-02": {
+    "ec2_name": "pyamidisagg-prodna2-02-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-03": {
+    "ec2_name": "pyamidisagg-prodna2-03-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-04": {
+    "ec2_name": "pyamidisagg-prodna2-04-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-05": {
+    "ec2_name": "pyamidisagg-prodna2-05-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-06": {
+    "ec2_name": "pyamidisagg-prodna2-06-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-07": {
+    "ec2_name": "pyamidisagg-prodna2-07-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-08": {
+    "ec2_name": "pyamidisagg-prodna2-08-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-09": {
+    "ec2_name": "pyamidisagg-prodna2-09-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-1": {
+    "ec2_name": "pyamidisagg-prodna2-1-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-10": {
+    "ec2_name": "pyamidisagg-prodna2-10-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-11": {
+    "ec2_name": "pyamidisagg-prodna2-11-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-12": {
+    "ec2_name": "pyamidisagg-prodna2-12-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-13": {
+    "ec2_name": "pyamidisagg-prodna2-13-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-14": {
+    "ec2_name": "pyamidisagg-prodna2-14-spot",
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-15": {
+    "ec2_name": "pyamidisagg-prodna2-15-spot",
+    "env": "prod-na-2"
+  },
+  "GenericEventData-prod-na-2": {
+    "ec2_name": "emailers-spot",
+    "env": "prod-na-2"
+  },
+  "PdfGeneration-prod-na-2": {
+    "ec2_name": "pdfgenerationservice-spot",
+    "env": "prod-na-2"
+  },
+  "NotificationsProcessorEvent-prod-na-2": {
+    "ec2_name": "notificationsprocessorservice-spot",
+    "env": "prod-na-2"
+  },
+  "GBUserDataIngestion-prod-na-adhoc": {
+    "ec2_name": [
+      "ingesterjobsadhoc-spot",
+      "ingesterjobsadhoc-od"
+    ],
+    "env": "prod-na"
+  },
+  "GBUserDataIngestion-prod-na-2-adhoc2": {
+    "ec2_name": [
+      "ingesterjobsadhoc-spot",
+      "ingesterjobsadhoc-od"
+    ],
+    "env": "prod-na-2"
+  },
+  "GBUserDataIngestion-prod-ca-adhoc-ca": {
+    "ec2_name": [
+      "ingesterjobsadhoc-spot",
+      "ingesterjobsadhoc-od"
+    ],
+    "env": "prod-ca"
+  },
+  "GBUserDataIngestion-prod-eu-adhoceu": {
+    "ec2_name": [
+      "ingesterjobsadhoc-spot",
+      "ingesterjobsadhoc-od"
+    ],
+    "env": "prod-eu"
+  },
+  "AggregationReadyUsers-prod-na-adhoc": {
+    "ec2_name": [
+      "aggregationsadhoc-spot"
+    ],
+    "env": "prod-na"
+  },
+  "AggregationReadyUsers-prod-na-2-adhoc2": {
+    "ec2_name": [
+      "aggregationsadhoc-spot"
+    ],
+    "env": "prod-na-2"
+  },
+  "AggregationReadyUsers-prod-ca-adhoc-ca": {
+    "ec2_name": [
+      "aggregationsadhoc-spot"
+    ],
+    "env": "prod-ca"
+  },
+  "AggregationReadyUsers-prod-eu-adhoc-prodeu": {
+    "ec2_name": [
+      "aggregationsadhoc-spot"
+    ],
+    "env": "prod-eu"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-adhoc": {
+    "ec2_name": [
+      "pyamidisaggadhoc-spot"
+    ],
+    "env": "prod-na"
+  },
+  "GbTempDataReadyEventPyAmi-prod-na-2-adhoc2": {
+    "ec2_name": [
+      "pyamidisaggadhoc-spot"
+    ],
+    "env": "prod-na-2"
+  },
+  "GbTempDataReadyEventPyAmi-prod-ca-adhoc-ca": {
+    "ec2_name": [
+      "pyamidisaggadhoc-spot"
+    ],
+    "env": "prod-ca"
+  },
+  "GbTempDataReadyEventPyAmi-prod-eu-adhoc-prodeu": {
+    "ec2_name": [
+      "pyamidisaggadhoc-spot"
+    ],
+    "env": "prod-eu"
+  }
+}

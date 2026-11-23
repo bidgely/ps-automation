@@ -42,6 +42,15 @@ spec:
           # CA/EU publish through the same <ENV>_DESTINATION_ROLE_ARN as their SQS
           # dispatch, so that role needs sns:Publish added alongside its SQS access.
           #
+          # SQS Queues tab (read-only monitoring, sqs_monitor.py) — same identities
+          # (pod role for NA/NA2, <ENV>_DESTINATION_ROLE_ARN for CA/EU), each needs in
+          # its own account:
+          #   sqs:GetQueueAttributes             on the pipeline queues
+          #   cloudwatch:GetMetricData           (processed/incoming per minute)
+          #   autoscaling:DescribeAutoScalingGroups, ec2:DescribeInstances   (Boxes column)
+          # A missing permission only blanks that column/env ("AccessDenied" / "n/a");
+          # the rest of the tab still works.
+          #
           # Cross-account SQS (CA, EU): server.py assumes a role in the queue's own AWS
           # account using THIS pod's role (sts:AssumeRole), then sends with the temporary
           # credentials, which it refreshes automatically before they expire. Configure
