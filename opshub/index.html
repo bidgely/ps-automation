@@ -581,6 +581,9 @@
 </div>
 
 <nav class="nav">
+  <div class="nav-tab" data-tab="sqsqueues" onclick="switchTab('sqsqueues')" title="SQS queue depth, throughput and boxes">
+    <span class="tab-icon">≋</span> SQS Queues<span class="sq-nav-dot" id="sq-nav-dot"></span>
+  </div>
   <div class="nav-tab active" data-tab="rerun" onclick="switchTab('rerun')">
     <span class="tab-icon">▶</span> Aggregation Re-Run
   </div>
@@ -592,9 +595,6 @@
   </div>
   <div class="nav-tab" data-tab="herrevoke" onclick="switchTab('herrevoke')">
     <span class="tab-icon">✕</span> HER Revocation
-  </div>
-  <div class="nav-tab" data-tab="sqsqueues" onclick="switchTab('sqsqueues')" title="SQS queue depth, throughput and boxes">
-    <span class="tab-icon">≋</span> SQS Queues<span class="sq-nav-dot" id="sq-nav-dot"></span>
   </div>
   <div class="nav-tab" data-tab="bctracker" onclick="switchTab('bctracker')">
     <span class="tab-icon">◉</span> BC Schedule Tracker
@@ -1886,8 +1886,8 @@
 // not actual access to the dispatch/data routes.
 // 'herrevoke' is admin + PS (user role) — not delivery.
 const ROLE_CONFIG = {
-  admin:    { tabs: ['rerun','disagg','ratecomp','herrevoke','sqsqueues','bctracker','bc','runbook','admin'], queueFilter: null },
-  user:     { tabs: ['rerun','disagg','ratecomp','herrevoke','sqsqueues','bctracker','bc','runbook','admin'], queueFilter: null },
+  admin:    { tabs: ['sqsqueues','rerun','disagg','ratecomp','herrevoke','bctracker','bc','runbook','admin'], queueFilter: null },
+  user:     { tabs: ['sqsqueues','rerun','disagg','ratecomp','herrevoke','bctracker','bc','runbook','admin'], queueFilter: null },
   delivery: { tabs: ['rerun'],                                            queueFilter: 'priority' },
 };
 
