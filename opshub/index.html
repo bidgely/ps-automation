@@ -178,6 +178,62 @@
   .sq-nav-dot { display:inline-block; width:7px; height:7px; border-radius:50%; margin-left:6px; background:transparent; vertical-align:1px; }
   .sq-nav-dot.red { background:var(--danger); } .sq-nav-dot.yellow { background:var(--warn); } .sq-nav-dot.green { background:var(--success); }
 
+  /* ─── PS DASHBOARD TAB ─────────────────────────────────────── */
+  .psd-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+  .psd-bar .psd-spacer { flex:1; }
+  .psd-updated { font-family:var(--mono); font-size:11px; color:var(--muted); }
+  .psd-chk { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); cursor:pointer; }
+  .psd-chk input { accent-color:var(--accent); }
+  .psd-banner { display:none; padding:10px 14px; margin-bottom:14px; border-radius:6px; font-size:12px;
+    background:rgba(245,82,82,0.08); border:1px solid rgba(245,82,82,0.3); color:var(--danger); }
+  .psd-major { margin-bottom:12px; background:var(--surface); border:1px solid var(--border); border-radius:10px; }
+  .psd-major > summary { list-style:none; cursor:pointer; padding:11px 16px; display:flex; align-items:center; gap:10px;
+    font-family:var(--mono); font-size:12px; letter-spacing:0.08em; text-transform:uppercase; color:var(--accent); }
+  .psd-major > summary::-webkit-details-marker { display:none; }
+  .psd-major > summary::before { content:'▸'; transition:transform .15s; color:var(--muted); }
+  .psd-major[open] > summary::before { transform:rotate(90deg); }
+  .psd-major .psd-total { color:var(--muted); font-size:11px; letter-spacing:0; text-transform:none; }
+  .psd-body { padding:0 14px 14px; }
+  .psd-tiles { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; margin-bottom:12px; }
+  .psd-tile { display:block; text-decoration:none; padding:9px 12px; border-radius:8px; background:var(--surface2);
+    border:1px solid var(--border); color:var(--text); transition:border-color .15s; }
+  .psd-tile:hover { border-color:var(--accent); }
+  .psd-tile .n { font-family:var(--mono); font-size:22px; font-weight:500; line-height:1.1; }
+  .psd-tile .l { font-size:11px; color:var(--muted); margin-top:2px; }
+  .psd-tile.red   .n { color:var(--danger); }
+  .psd-tile.amber .n { color:var(--warn); }
+  .psd-tile.ok    .n { color:var(--success); }
+  .psd-tile.err   .n { color:var(--muted); }
+  .psd-cols { column-width:600px; column-gap:12px; }
+  .psd-sec { break-inside:avoid; margin-bottom:10px; border:1px solid var(--border); border-radius:8px; background:var(--bg); }
+  .psd-sec.wide { column-span:all; }
+  .psd-sec > summary { list-style:none; cursor:pointer; padding:8px 12px; display:flex; align-items:center; gap:8px; font-size:12px; font-weight:500; }
+  .psd-sec > summary::-webkit-details-marker { display:none; }
+  .psd-sec > summary::before { content:'▸'; font-size:10px; color:var(--muted); transition:transform .15s; }
+  .psd-sec[open] > summary::before { transform:rotate(90deg); }
+  .psd-pill { margin-left:auto; font-family:var(--mono); font-size:11px; padding:1px 8px; border-radius:10px;
+    background:var(--surface2); border:1px solid var(--border2); color:var(--text); }
+  .psd-pill a { color:inherit; text-decoration:none; }
+  .psd-scroll { overflow-x:auto; border-top:1px solid var(--border); }
+  .psd-t { width:100%; border-collapse:collapse; font-size:11.5px; }
+  .psd-t th { text-align:left; padding:6px 10px; color:var(--muted); font-weight:500; font-family:var(--mono); font-size:10px;
+    letter-spacing:0.06em; text-transform:uppercase; white-space:nowrap; position:sticky; top:0; background:var(--bg); }
+  .psd-t td { padding:5px 10px; border-top:1px solid var(--border); vertical-align:top; }
+  .psd-t td.s { min-width:200px; } .psd-t td.n { white-space:nowrap; }
+  .psd-t td.m { font-family:var(--mono); white-space:nowrap; }
+  .psd-t a { color:var(--accent); text-decoration:none; }
+  .psd-t a:hover { text-decoration:underline; }
+  .psd-t tr:hover td { background:rgba(79,124,255,0.05); }
+  .psd-pr { font-family:var(--mono); font-size:10px; padding:1px 6px; border-radius:4px; border:1px solid var(--border2); color:var(--muted); }
+  .psd-pr.red   { color:var(--danger); border-color:rgba(245,82,82,0.4); }
+  .psd-pr.amber { color:var(--warn);   border-color:rgba(245,166,35,0.4); }
+  .psd-age.old  { color:var(--danger); }
+  .psd-age.mid  { color:var(--warn); }
+  .psd-empty { padding:10px 12px; font-size:12px; color:var(--muted); border-top:1px solid var(--border); }
+  .psd-more  { padding:8px 12px; font-size:11px; color:var(--muted); border-top:1px solid var(--border); }
+  .psd-more a { color:var(--accent); }
+  .psd-bar-cell { width:90px; }
+  .psd-mini { height:6px; border-radius:3px; background:var(--accent); min-width:2px; }
   .page { display: none; }
   .page.active { display: block; }
   /* PAGE HEADER */
@@ -581,6 +637,9 @@
 </div>
 
 <nav class="nav">
+  <div class="nav-tab" data-tab="psdash" onclick="switchTab('psdash')" title="Live Jira view of PS daily operations">
+    <span class="tab-icon">▦</span> PS Dashboard
+  </div>
   <div class="nav-tab" data-tab="sqsqueues" onclick="switchTab('sqsqueues')" title="SQS queue depth, throughput and boxes">
     <span class="tab-icon">≋</span> SQS Queues<span class="sq-nav-dot" id="sq-nav-dot"></span>
   </div>
@@ -595,6 +654,9 @@
   </div>
   <div class="nav-tab" data-tab="herrevoke" onclick="switchTab('herrevoke')">
     <span class="tab-icon">✕</span> HER Revocation
+  </div>
+  <div class="nav-tab" data-tab="seasonal" onclick="switchTab('seasonal')" title="Schedule summer / winter seasonal emails">
+    <span class="tab-icon">❄</span> Seasonal Email
   </div>
   <div class="nav-tab" data-tab="bctracker" onclick="switchTab('bctracker')">
     <span class="tab-icon">◉</span> BC Schedule Tracker
@@ -1270,6 +1332,177 @@
     </div>
   </div>
 
+  <!-- ═══════════════════════ SEASONAL EMAIL TAB ═══════════════════════ -->
+  <!-- Backend: seasonal_email.py (routes registered in server.py) -->
+  <div class="page" id="page-seasonal">
+    <div class="page-header">
+      <div class="page-title">Seasonal Email</div>
+      <div class="page-sub">Schedule a summer or winter seasonal email — builds the script and user list, opens the Utils PR, then runs the Jenkins job</div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;border-color:rgba(245,166,35,0.3);">
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:220px;">
+          <label class="form-label" for="se-ticket">Ticket Number <span style="color:var(--danger);">*</span></label>
+          <input class="form-input" type="text" id="se-ticket" placeholder="e.g. EEOPS-70" autocomplete="off" style="font-family:var(--mono);font-size:13px;" oninput="seInvalidate()">
+        </div>
+        <div style="font-size:11px;color:var(--muted);max-width:320px;padding-top:18px;">The pilot’s ticket. Saved with the run, and updates are posted to it once Jira is connected</div>
+      </div>
+    </div>
+
+    <div class="grid-3" style="margin-bottom:20px;">
+      <div class="stat-card">
+        <div class="stat-label">Last Run</div>
+        <div class="stat-val" id="se-stat-lastrun">—</div>
+        <div class="stat-sub" id="se-stat-lastrun-sub">No runs yet</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Runs</div>
+        <div class="stat-val" id="se-stat-runs">0</div>
+        <div class="stat-sub">Seasonal email runs</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Last Status</div>
+        <div class="stat-val" id="se-stat-status" style="font-size:16px;padding-top:6px;">—</div>
+        <div class="stat-sub" id="se-stat-status-sub">Awaiting execution</div>
+      </div>
+    </div>
+
+    <div style="padding:10px 14px;background:rgba(255,90,90,0.06);border:1px solid rgba(255,90,90,0.2);border-radius:8px;font-size:12px;color:var(--danger);font-family:var(--mono);margin-bottom:20px;line-height:1.7;">
+      ⚠ These emails go to real customers. Check the pilot, environment, send time and user count before triggering.
+    </div>
+
+    <div class="grid-2" style="align-items:start;">
+
+      <!-- LEFT: CONFIG -->
+      <div>
+        <div class="card">
+          <div class="card-title">Environment</div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Environment</label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;" id="se-env-selector">
+              <div class="env-btn" data-env="NA2" onclick="seSelectEnv('NA2')" role="button" tabindex="0">
+                <div style="font-size:13px;font-weight:500;">NA2</div>
+                <div style="font-size:10px;color:var(--muted);font-family:var(--mono);">run-script-na-2-ps</div>
+              </div>
+              <div class="env-btn" data-env="NA" onclick="seSelectEnv('NA')" role="button" tabindex="0">
+                <div style="font-size:13px;font-weight:500;">NA</div>
+                <div style="font-size:10px;color:var(--muted);font-family:var(--mono);">run-script-na-ps</div>
+              </div>
+              <div class="env-btn" data-env="CA" onclick="seSelectEnv('CA')" role="button" tabindex="0">
+                <div style="font-size:13px;font-weight:500;">CA</div>
+                <div style="font-size:10px;color:var(--muted);font-family:var(--mono);">run-script-ca-ps</div>
+              </div>
+              <div class="env-btn" data-env="EU" onclick="seSelectEnv('EU')" role="button" tabindex="0">
+                <div style="font-size:13px;font-weight:500;">EU</div>
+                <div style="font-size:10px;color:var(--muted);font-family:var(--mono);">run-script-prod-eu-ps</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Campaign</div>
+          <div class="form-group">
+            <label class="form-label" for="se-pilot">Pilot ID <span style="color:var(--danger);">*</span></label>
+            <input class="form-input" type="text" id="se-pilot" inputmode="numeric" placeholder="e.g. 10106" autocomplete="off" style="font-family:var(--mono);" oninput="sePilotChanged()">
+            <div id="se-pilot-hint" style="font-size:11px;color:var(--muted);margin-top:6px;"></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="se-season">Season</label>
+            <select class="form-select" id="se-season" onchange="seInvalidate()">
+              <option value="WINTER_ALERT">Winter (WINTER_ALERT)</option>
+              <option value="SUMMER_ALERT">Summer (SUMMER_ALERT)</option>
+            </select>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" for="se-date">Send Date (IST)</label>
+              <input class="form-input" type="date" id="se-date" onchange="seInvalidate()">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" for="se-time">Send Time (IST)</label>
+              <input class="form-input" type="time" id="se-time" onchange="seInvalidate()">
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">User List</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;" id="se-src-selector">
+            <div class="env-btn active" data-src="starburst" onclick="seSelectSource('starburst')" role="button" tabindex="0">
+              <div style="font-size:13px;font-weight:500;">All active users</div>
+              <div style="font-size:10px;color:var(--muted);font-family:var(--mono);">Starburst · user_meta_data</div>
+            </div>
+            <div class="env-btn" data-src="upload" onclick="seSelectSource('upload')" role="button" tabindex="0">
+              <div style="font-size:13px;font-weight:500;">Upload a list</div>
+              <div style="font-size:10px;color:var(--muted);font-family:var(--mono);">.csv / .txt · one UUID per line</div>
+            </div>
+          </div>
+          <div id="se-src-starburst" style="font-size:12.5px;">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:10px;font-family:var(--mono);">pilot_id = &lt;pilot&gt; AND user_status = 'ENABLED'</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;">
+              <input class="form-input" id="se-sb-user" placeholder="Your Starburst login (optional)" autocomplete="username" aria-label="Starburst login" style="font-family:var(--mono);font-size:12px;" oninput="seInvalidate()">
+              <input class="form-input" type="password" id="se-sb-pass" placeholder="Password" autocomplete="current-password" aria-label="Starburst password" style="font-family:var(--mono);font-size:12px;" oninput="seInvalidate()">
+            </div>
+            <div id="se-sb-hint" style="font-size:11px;color:var(--muted);margin-bottom:12px;">Same as HER Revocation: used for this lookup only and never saved. Leave blank to use OpsHub’s shared Starburst account.</div>
+            <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;cursor:pointer;"><input type="checkbox" id="se-f-email" onchange="seInvalidate()"> Leave out users with no email address</label>
+            <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;cursor:pointer;"><input type="checkbox" id="se-f-notif" onchange="seInvalidate()"> Leave out users with notifications disabled</label>
+            <label style="display:flex;gap:8px;align-items:center;cursor:pointer;"><input type="checkbox" id="se-f-test" onchange="seInvalidate()"> Leave out test users</label>
+          </div>
+          <div id="se-count" style="margin-top:12px;font-size:12.5px;color:var(--muted);" aria-live="polite">Enter a pilot ID and choose the environment to see how many users will get the email.</div>
+          <div id="se-src-upload" style="display:none;">
+            <input class="form-input" type="file" id="se-file" accept=".csv,.txt" onchange="seInvalidate()">
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Options</div>
+          <div class="form-group" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0;">
+            <span>
+              <span class="form-label" style="margin-bottom:2px;">Skip Subscription Check</span>
+              <div style="font-size:11px;color:var(--muted);">Passes <code style="font-family:var(--mono);font-size:11px;color:var(--accent2);">-skipUserSubscriptionsCheck true</code></div>
+            </span>
+            <div class="toggle-switch on" id="se-skip-toggle" onclick="seToggleSkip()" role="switch" aria-checked="true" tabindex="0">
+              <div class="toggle-knob"></div>
+            </div>
+          </div>
+          <label id="se-skip-ack-row" style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:12px;cursor:pointer;">
+            <input type="checkbox" id="se-skip-ack" style="margin-top:2px;" onchange="seInvalidate()">
+            <span>Users get the email even if they’ve unsubscribed. I’ve confirmed this is right for this pilot.</span>
+          </label>
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-outline" id="se-btn-check" onclick="sePreview()">Check Details</button>
+          <button class="btn se-btn-primary" id="se-btn-create" onclick="seCreate()" disabled>Create PR</button>
+        </div>
+        <div id="se-msg" style="margin-top:10px;" role="status" aria-live="polite"></div>
+      </div>
+
+      <!-- RIGHT: SUMMARY + RUNS -->
+      <div>
+        <div class="card">
+          <div class="card-title">Summary</div>
+          <div id="se-summary" style="font-size:13px;color:var(--muted);">Fill in the campaign and click Check Details.</div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <div class="card-title" style="margin-bottom:0;">Runs</div>
+            <button class="btn btn-outline btn-sm" onclick="seLoadRuns()">Refresh</button>
+          </div>
+          <div id="se-runs" style="font-size:12.5px;color:var(--muted);">Loading…</div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Jenkins Console</div>
+          <div class="terminal" id="se-console">Select “Console” on a run to see its Jenkins output.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ═══════════════════════ HER REVOCATION TAB ═══════════════════════ -->
   <div class="page" id="page-herrevoke">
     <div class="page-header">
@@ -1545,6 +1778,24 @@
 
   <!-- ═══════════════════════ BC SCHEDULE TRACKER TAB ═══════════════════════ -->
   <!-- ═══════════════════════ SQS QUEUES TAB ═══════════════════════ -->
+  <!-- ═══════════════════════ PS DASHBOARD TAB ═══════════════════════ -->
+  <div class="page" id="page-psdash">
+    <div class="page-header">
+      <div class="page-title">PS Daily Operations Dashboard</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px;">Live from Jira · refreshes every 30 seconds · click any number or ticket to open it in Jira</div>
+    </div>
+    <div class="psd-bar">
+      <button class="btn btn-outline" id="psd-refresh" onclick="psdLoad(true)">↻ Refresh now</button>
+      <label class="psd-chk"><input type="checkbox" id="psd-auto" checked onchange="psdToggleAuto(this.checked)"> Auto-refresh 30s</label>
+      <span class="psd-updated" id="psd-updated">Loading…</span>
+      <span class="psd-spacer"></span>
+      <button class="btn btn-outline" onclick="psdExpand(true)">Expand all</button>
+      <button class="btn btn-outline" onclick="psdExpand(false)">Collapse all</button>
+    </div>
+    <div class="psd-banner" id="psd-banner"></div>
+    <div id="psd-root"></div>
+  </div>
+
   <div class="page" id="page-sqsqueues">
     <div class="page-header">
       <div class="page-title">SQS Queues</div>
@@ -1857,6 +2108,7 @@
             <option value="Aggregation">Aggregation</option>
             <option value="Disaggregation">Disaggregation</option>
             <option value="Rate Comparison">Rate Comparison</option>
+            <option value="Seasonal Email">Seasonal Email</option>
           </select>
         </div>
         <div style="flex:1;min-width:160px;">
@@ -1929,9 +2181,9 @@
 // not actual access to the dispatch/data routes.
 // 'herrevoke' is admin + PS (user role) — not delivery.
 const ROLE_CONFIG = {
-  admin:    { tabs: ['sqsqueues','rerun','disagg','ratecomp','herrevoke','bctracker','bc','runbook','admin'], queueFilter: null },
-  user:     { tabs: ['sqsqueues','rerun','disagg','ratecomp','herrevoke','bctracker','bc','runbook','admin'], queueFilter: null },
-  delivery: { tabs: ['rerun'],                                            queueFilter: 'priority' },
+  admin:    { tabs: ['psdash','sqsqueues','rerun','disagg','ratecomp','herrevoke','seasonal','bctracker','bc','runbook','admin'], queueFilter: null },
+  user:     { tabs: ['psdash','sqsqueues','rerun','disagg','ratecomp','herrevoke','seasonal','bctracker','bc','runbook','admin'], queueFilter: null },
+  delivery: { tabs: ['psdash','rerun'],                                            queueFilter: 'priority' },
 };
 
 let currentUser = null;
@@ -2201,7 +2453,198 @@ function switchTab(tab) {
   if (tab === 'admin') { fetchRunLog().then(() => { updateAdminStats(); renderAdminTable(); }); }
   if (tab === 'bctracker' && !bctData) loadBcTracker();
   if (tab === 'herrevoke') { herLoadTokenStatus(); herLoadAuditLog(); herUpdateStats(); herStarburstRefreshStatus(); }
+  if (tab === 'seasonal') { seLoad(); }
   if (tab === 'sqsqueues') { sqLoad(); sqSchedule(); } else { sqStopSchedule(); }
+  if (tab === 'psdash') { psdLoad(); psdSchedule(); } else { psdStopSchedule(); }
+}
+
+// ─── PS DASHBOARD (Jira) ──────────────────────────────────────
+// Data comes from GET /api/ps-dashboard (ps_dashboard.py), cached 30s server-side
+// and shared by everyone. Add ?psdemo=1 to the page URL to see sample data.
+const PSD_API = '/api/ps-dashboard';
+const PSD_REFRESH_MS = 30000;
+const PSD_MAX_ROWS = 200;
+const PSD_SECTIONS = [
+  { id: 'action',     title: 'Action needed' },
+  { id: 'pending',    title: 'Pending on others' },
+  { id: 'monitoring', title: 'Monitoring' },
+];
+const psd = { data: null, timer: null, loading: false, auto: true, open: {}, major: {} };
+
+const psdEsc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function psdAgeDays(created) {
+  if (!created) return null;
+  const t = Date.parse(String(created).replace(/([+-]\d{2})(\d{2})$/, '$1:$2'));
+  return isNaN(t) ? null : Math.round((Date.now() - t) / 864e5 * 10) / 10;
+}
+function psdTone(f) {
+  if (f.error) return 'err';
+  if (/blocker/i.test(f.name)) return f.count ? 'red' : 'ok';
+  if (/critical/i.test(f.name)) return f.count ? 'amber' : 'ok';
+  if (/unassigned/i.test(f.name)) return f.count ? 'amber' : 'ok';
+  return '';
+}
+function psdPrio(p) {
+  const c = /blocker|highest/i.test(p) ? 'red' : /critical|high/i.test(p) ? 'amber' : '';
+  return `<span class="psd-pr ${c}">${psdEsc(p || '—')}</span>`;
+}
+const psdFilterUrl = (site, id) => `${site}/issues/?filter=${id}`;
+
+function psdTile(site, f) {
+  return `<a class="psd-tile ${psdTone(f)}" href="${psdFilterUrl(site, f.id)}" target="_blank" rel="noopener" title="Open filter ${f.id} in Jira">
+    <div class="n">${f.error ? '—' : f.count.toLocaleString('en-US')}</div><div class="l">${psdEsc(f.name)}${f.error ? ' · ' + psdEsc(f.error) : ''}</div></a>`;
+}
+
+function psdTable(site, f) {
+  if (f.error) return `<div class="psd-empty">Could not load this filter (${psdEsc(f.error)}).</div>`;
+  if (!f.issues.length) return `<div class="psd-empty">No tickets.</div>`;
+  const rows = f.issues.map(i => ({ ...i, age: psdAgeDays(i.created) }));
+  rows.sort((a, b) => (b.age ?? -1) - (a.age ?? -1));
+  const shown = rows.slice(0, PSD_MAX_ROWS);
+  const body = shown.map(i => {
+    const cls = i.age == null ? '' : i.age >= 14 ? 'old' : i.age >= 7 ? 'mid' : '';
+    return `<tr><td class="m"><a href="${site}/browse/${psdEsc(i.key)}" target="_blank" rel="noopener">${psdEsc(i.key)}</a></td>
+      <td class="s"><a href="${site}/browse/${psdEsc(i.key)}" target="_blank" rel="noopener" style="color:var(--text)">${psdEsc(i.summary)}</a></td>
+      <td>${psdPrio(i.priority)}</td><td class="n">${psdEsc(i.status)}</td><td class="n">${psdEsc(i.assignee)}</td>
+      <td class="m psd-age ${cls}">${i.age == null ? '—' : i.age + 'd'}</td></tr>`;
+  }).join('');
+  const more = f.count > shown.length
+    ? `<div class="psd-more">Showing ${shown.length} of ${f.count.toLocaleString('en-US')} · <a href="${psdFilterUrl(site, f.id)}" target="_blank" rel="noopener">open all in Jira</a></div>` : '';
+  return `<div class="psd-scroll"><table class="psd-t"><thead><tr><th>Key</th><th>Summary</th><th>Priority</th><th>Status</th><th>Assignee</th><th>Age</th></tr></thead><tbody>${body}</tbody></table></div>${more}`;
+}
+
+function psdSec(site, f, wide) {
+  const k = 'f' + f.id;
+  const open = k in psd.open ? psd.open[k] : (!f.error && f.count > 0 && f.count <= 25);
+  return `<details class="psd-sec${wide ? ' wide' : ''}" data-k="${k}"${open ? ' open' : ''}>
+    <summary>${psdEsc(f.name)}<span class="psd-pill"><a href="${psdFilterUrl(site, f.id)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${f.error ? '!' : f.count.toLocaleString('en-US')}</a></span></summary>
+    ${psdTable(site, f)}</details>`;
+}
+
+// Owner × priority workload for a set of three priority filters
+function psdMatrix(site, title, fs, key) {
+  const cols = fs.map(f => (/blocker/i.test(f.name) ? 'Blocker' : /critical/i.test(f.name) ? 'Critical' : 'Normal'));
+  const by = {};
+  fs.forEach((f, ci) => (f.issues || []).forEach(i => {
+    const o = by[i.assignee] || (by[i.assignee] = [0, 0, 0]);
+    o[ci]++;
+  }));
+  const owners = Object.entries(by).map(([n, c]) => ({ n, c, t: c[0] + c[1] + c[2] })).sort((a, b) => b.t - a.t);
+  const max = owners.length ? owners[0].t : 1;
+  const k = 'm' + key;
+  const open = k in psd.open ? psd.open[k] : true;
+  const body = owners.map(o => `<tr><td>${psdEsc(o.n)}</td>${o.c.map(v => `<td class="m">${v || '·'}</td>`).join('')}
+    <td class="m"><b>${o.t}</b></td><td class="psd-bar-cell"><div class="psd-mini" style="width:${Math.max(3, o.t / max * 100)}%"></div></td></tr>`).join('');
+  return `<details class="psd-sec" data-k="${k}"${open ? ' open' : ''}><summary>${psdEsc(title)}<span class="psd-pill">${owners.reduce((s, o) => s + o.t, 0)}</span></summary>
+    ${owners.length ? `<div class="psd-scroll"><table class="psd-t"><thead><tr><th>Owner</th>${cols.map(c => `<th>${c}</th>`).join('')}<th>Total</th><th></th></tr></thead><tbody>${body}</tbody></table></div>` : '<div class="psd-empty">No tickets.</div>'}</details>`;
+}
+
+function psdRender() {
+  const d = psd.data;
+  if (!d) return;
+  const site = d.site;
+  const byName = (re) => d.filters.find(f => re.test(f.name));
+  const html = PSD_SECTIONS.map(sec => {
+    const fs = d.filters.filter(f => f.section === sec.id);
+    if (!fs.length) return '';
+    const total = fs.filter(f => !/aging|24h|BII/i.test(f.name)).reduce((s, f) => s + (f.count || 0), 0);
+    let extra = '';
+    if (sec.id === 'action') {
+      const pr = fs.filter(f => /^Action –/.test(f.name));
+      extra = psdMatrix(site, 'Owner workload — action', pr, 'action');
+    } else if (sec.id === 'pending') {
+      const pr = fs.filter(f => /^Pending –/.test(f.name));
+      extra = psdMatrix(site, 'Owner workload — pending', pr, 'pending');
+    }
+    const lists = [extra].concat(fs.map(f => psdSec(site, f, f.count > 25))).join('');
+    const mk = 'S' + sec.id;
+    const open = mk in psd.major ? psd.major[mk] : true;
+    return `<details class="psd-major" data-m="${mk}"${open ? ' open' : ''}>
+      <summary>${psdEsc(sec.title)} <span class="psd-total">· ${total.toLocaleString('en-US')} tickets</span></summary>
+      <div class="psd-body"><div class="psd-tiles">${fs.map(f => psdTile(site, f)).join('')}</div>
+      <div class="psd-cols">${lists}</div></div></details>`;
+  }).join('');
+  document.getElementById('psd-root').innerHTML = html;
+  document.getElementById('psd-updated').textContent = 'Updated ' + new Date(d.updated).toLocaleTimeString();
+}
+
+function psdBanner(msg) {
+  const b = document.getElementById('psd-banner');
+  b.style.display = msg ? 'block' : 'none';
+  b.textContent = msg || '';
+}
+
+async function psdLoad(force) {
+  if (psd.loading) return;
+  psd.loading = true;
+  const btn = document.getElementById('psd-refresh');
+  if (btn) btn.disabled = true;
+  try {
+    if (new URLSearchParams(location.search).has('psdemo')) {
+      psd.data = psdDemo();
+    } else {
+      const resp = await fetch(PSD_API + (force ? '?refresh=1' : ''), { credentials: 'same-origin' });
+      if (resp.status === 401) { showLoginScreen(); return; }
+      const j = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(j.message || ('HTTP ' + resp.status));
+      psd.data = j;
+    }
+    psdBanner('');
+    psdRender();
+  } catch (e) {
+    psdBanner('Could not load Jira data: ' + e.message + (psd.data ? ' — showing the last data received.' : ''));
+    document.getElementById('psd-updated').textContent = 'Update failed';
+  } finally {
+    psd.loading = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
+function psdSchedule() {
+  psdStopSchedule();
+  if (!psd.auto) return;
+  psd.timer = setInterval(() => { if (!document.hidden) psdLoad(false); }, PSD_REFRESH_MS);
+}
+function psdStopSchedule() { if (psd.timer) { clearInterval(psd.timer); psd.timer = null; } }
+function psdToggleAuto(on) { psd.auto = on; on ? psdSchedule() : psdStopSchedule(); }
+
+function psdExpand(open) {
+  document.querySelectorAll('#psd-root details').forEach(el => { el.open = open; });
+  document.querySelectorAll('#psd-root details[data-k]').forEach(el => { psd.open[el.dataset.k] = open; });
+  document.querySelectorAll('#psd-root details[data-m]').forEach(el => { psd.major[el.dataset.m] = open; });
+}
+// Remember what the user opened/closed so a 30s refresh doesn't undo it.
+document.getElementById('psd-root').addEventListener('toggle', (ev) => {
+  const el = ev.target;
+  if (el.dataset && el.dataset.k) psd.open[el.dataset.k] = el.open;
+  if (el.dataset && el.dataset.m) psd.major[el.dataset.m] = el.open;
+}, true);
+
+// Sample data for ?psdemo=1 (no Jira needed)
+function psdDemo() {
+  const now = Date.now(), iso = (d) => new Date(now - d * 864e5).toISOString().replace('Z', '+0000');
+  const mk = (n, who, pri, d) => Array.from({ length: n }, (_, i) => ({ key: 'PS-' + (1000 + i + d), summary: 'Sample ticket ' + (i + 1) + ' for ' + who, priority: pri, status: 'In Progress', assignee: who, created: iso(d + i) }));
+  const F = (id, name, section, issues) => ({ id, name, section, count: issues.length, issues, error: null });
+  return { site: 'https://bidgely.atlassian.net', updated: now, filters: [
+    F(34518, 'Unassigned', 'action', mk(3, 'Unassigned', 'Major', 2)),
+    F(46986, 'Action – Blocker', 'action', mk(2, 'Asha', 'Blocker', 1)),
+    F(46987, 'Action – Critical', 'action', mk(4, 'Ravi', 'Critical', 5)),
+    F(46988, 'Action – Normal', 'action', mk(9, 'Asha', 'Medium', 9)),
+    F(46990, 'BII – Open', 'action', mk(2, 'Ravi', 'Medium', 3)),
+    F(46984, 'Created in last 24h', 'action', mk(3, 'Asha', 'Medium', 0)),
+    F(47001, 'Aging queue (all action)', 'action', mk(12, 'Ravi', 'Critical', 15)),
+    F(46991, 'Pending – Blocker', 'pending', []),
+    F(46992, 'Pending – Critical', 'pending', mk(2, 'Asha', 'Critical', 4)),
+    F(46993, 'Pending – Normal', 'pending', mk(30, 'Ravi', 'Medium', 6)),
+    F(46994, 'BII – Pending', 'pending', mk(1, 'Ravi', 'Medium', 6)),
+    F(45225, 'Queue stuck', 'monitoring', mk(1, 'Asha', 'Major', 1)),
+    F(40966, 'Ingestion gap', 'monitoring', []),
+    F(46982, 'HER', 'monitoring', mk(2, 'Ravi', 'Medium', 3)),
+    F(46983, 'BRE', 'monitoring', []),
+    F(45357, 'NISC onboarding', 'monitoring', mk(1, 'Asha', 'Medium', 8)),
+    F(41065, 'Missing files', 'monitoring', mk(5, 'Ravi', 'Medium', 2)),
+  ] };
 }
 
 // ─── SQS QUEUES (monitoring) ───────────────────────────────────
@@ -5177,6 +5620,438 @@ function downloadRunbook() {
   a.download = `${name.replace(/\s+/g, '_')}_runbook.txt`;
   a.click();
 }
+</script>
+<style>
+  /* Seasonal Email tab: primary button in the accent colour used across OpsHub */
+  .se-btn-primary { background: var(--accent, var(--accent2)); border: 1px solid var(--accent, var(--accent2)); color: #fff; }
+  .se-btn-primary:disabled { opacity: .45; cursor: not-allowed; }
+</style>
+<script>
+// ─── SEASONAL EMAIL TAB (backend: seasonal_email.py) ─────────────────────────
+// Everything here is prefixed "se" so it can't clash with the other tabs.
+let seConfig = null, seEnv = null, seSource = 'starburst', seSkip = true, sePreviewed = false, seLastProfile = null;
+
+const seEsc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const seFmt = (n) => Number(n || 0).toLocaleString('en-US');
+const seSeason = (e) => e === 'WINTER_ALERT' ? 'winter' : e === 'SUMMER_ALERT' ? 'summer' : e;
+
+async function seCall(path, opts = {}) {
+  const r = await fetch(path, { credentials: 'same-origin', ...opts });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok || body.status === 'error') throw new Error(body.message || `Request failed (${r.status})`);
+  return body;
+}
+
+function seMsg(kind, text) {
+  const colors = { bad: 'var(--danger)', ok: 'var(--success)', warn: 'var(--warn)' };
+  document.getElementById('se-msg').innerHTML = text
+    ? `<div style="font-size:12px;color:${colors[kind]};font-family:var(--mono);line-height:1.6;">${seEsc(text)}</div>` : '';
+}
+
+async function seLoad() {
+  try {
+    if (!seConfig) {
+      seConfig = await seCall('/api/seasonal/config');
+      document.getElementById('se-btn-create').textContent = seConfig.modes.github ? 'Create PR' : 'Create Files';
+      seStarburstHint();
+    }
+  } catch (e) { seMsg('bad', `Couldn’t load Seasonal Email settings: ${e.message}`); }
+  seLoadRuns();
+}
+
+function seSelectEnv(code) {
+  seEnv = code;
+  document.querySelectorAll('#se-env-selector .env-btn').forEach(b => b.classList.toggle('active', b.dataset.env === code));
+  seStarburstHint();
+  seInvalidate();
+}
+
+function seStarburstHint() {
+  const hint = document.getElementById('se-sb-hint');
+  const shared = seConfig && seConfig.starburst_shared_login;
+  if (seEnv && shared && shared[seEnv] === false)
+    hint.innerHTML = `No shared Starburst account is set up for ${seEsc(seEnv)}, so enter your own Starburst login. It’s used for this lookup only and never saved.`;
+  else
+    hint.textContent = 'Same as HER Revocation: used for this lookup only and never saved. Leave blank to use OpsHub’s shared Starburst account.';
+}
+
+function seSelectSource(src) {
+  seSource = src;
+  document.querySelectorAll('#se-src-selector .env-btn').forEach(b => b.classList.toggle('active', b.dataset.src === src));
+  document.getElementById('se-src-starburst').style.display = src === 'starburst' ? 'block' : 'none';
+  document.getElementById('se-src-upload').style.display = src === 'upload' ? 'block' : 'none';
+  seInvalidate();
+}
+
+function seSetSkip(on) {
+  seSkip = on;
+  const t = document.getElementById('se-skip-toggle');
+  t.classList.toggle('on', on); t.setAttribute('aria-checked', on ? 'true' : 'false');
+  document.getElementById('se-skip-ack-row').style.display = on ? 'flex' : 'none';
+  document.getElementById('se-skip-ack').checked = false;
+}
+function seToggleSkip() { seSetSkip(!seSkip); seInvalidate(); }
+
+function sePilotChanged() {
+  const id = document.getElementById('se-pilot').value.trim();
+  const hint = document.getElementById('se-pilot-hint');
+  const p = seConfig && seConfig.pilots.find(x => String(x.pilot_id) === id);
+  if (p && seLastProfile !== id) {
+    if (p.env) seSelectEnv(p.env);
+    if (p.default_send_time_ist) document.getElementById('se-time').value = p.default_send_time_ist;
+    const f = p.default_filters || {};
+    document.getElementById('se-f-email').checked = !!f.exclude_no_email;
+    document.getElementById('se-f-notif').checked = !!f.exclude_notifications_disabled;
+    document.getElementById('se-f-test').checked = !!f.exclude_test_users;
+    seSetSkip(p.skip_subscription_check_default !== false);
+  }
+  seLastProfile = p ? id : null;
+  if (!id) hint.textContent = '';
+  else if (!/^\d{4,7}$/.test(id)) hint.textContent = 'Pilot IDs are numbers, for example 10106.';
+  else if (p) {
+    const todo = (p.to_confirm || []).length ? ` To confirm: ${p.to_confirm.join('; ')}.` : '';
+    hint.textContent = `${p.name}${p.env ? ' · usually ' + p.env : ''}.${p.notes ? ' ' + p.notes : ''}${todo}`;
+  } else hint.textContent = 'No saved defaults for this pilot. Choose the environment above.';
+  seInvalidate();
+}
+
+// ── Live user count (no button needed) ─────────────────────────
+let seCountTimer = null, seCountSeq = 0, seCountKey = null;
+const seCountCache = {};
+
+function seCountBox(html) { document.getElementById('se-count').innerHTML = html; }
+
+function seScheduleCount() {
+  clearTimeout(seCountTimer);
+  seCountTimer = setTimeout(seAutoCount, 700);
+}
+
+async function seAutoCount() {
+  if (seSource === 'upload') return seCountFile();
+  const id = document.getElementById('se-pilot').value.trim();
+  if (!/^\d{4,7}$/.test(id) || !seEnv) {
+    seCountKey = null;
+    seCountBox('Enter a pilot ID and choose the environment to see how many users will get the email.');
+    return;
+  }
+  const user = document.getElementById('se-sb-user').value.trim();
+  const pass = document.getElementById('se-sb-pass').value;
+  if (!!user !== !!pass) { seCountBox('Enter both your Starburst login and password, or leave both blank.'); return; }
+  const f = ['se-f-email', 'se-f-notif', 'se-f-test'].map(x => document.getElementById(x).checked ? 1 : 0).join('');
+  const key = `${seEnv}|${id}|${f}|${user}`;
+  if (key === seCountKey) return;                       // same inputs as the count already shown
+  seCountKey = key;
+  if (seCountCache[key]) return seShowCount(seCountCache[key]);
+  const seq = ++seCountSeq;
+  seCountBox('<span style="color:var(--warn);">Counting users in Starburst…</span> this can take up to a minute for large pilots.');
+  const fd = new FormData();
+  fd.set('pilot_id', id); fd.set('env', seEnv);
+  fd.set('exclude_no_email', document.getElementById('se-f-email').checked);
+  fd.set('exclude_notifications_disabled', document.getElementById('se-f-notif').checked);
+  fd.set('exclude_test_users', document.getElementById('se-f-test').checked);
+  if (user) { fd.set('sb_user', user); fd.set('sb_password', pass); }
+  try {
+    const d = await seCall('/api/seasonal/count', { method: 'POST', body: fd });
+    if (seq !== seCountSeq) return;                     // inputs changed meanwhile; a newer count is coming
+    seCountCache[key] = d;
+    seShowCount(d);
+  } catch (e) {
+    if (seq !== seCountSeq) return;
+    seCountKey = null;
+    seCountBox(`<span style="color:var(--danger);">${seEsc(e.message)}</span>`);
+  }
+}
+
+function seShowCount(d) {
+  const before = d.enabled_count !== d.user_count ? ` <span style="color:var(--muted);">of ${seFmt(d.enabled_count)} enabled</span>` : '';
+  seCountBox(`<span style="font-size:18px;font-weight:600;color:var(--success);">${seFmt(d.user_count)}</span> users${before}
+    <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:2px;">${seEsc(d.pilot_name)} · ${seEsc(d.env)} · ${seEsc(d.catalog)}.public.user_meta_data</div>
+    ${d.user_count === 0 ? '<div style="color:var(--danger);margin-top:4px;">No enabled users for this pilot here. Check the pilot ID and environment.</div>' : ''}`);
+}
+
+function seCountFile() {
+  const file = document.getElementById('se-file').files[0];
+  if (!file) { seCountBox('Choose a file to see how many users it has.'); return; }
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const re = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const seen = new Set(); let invalid = 0, dupes = 0;
+    ev.target.result.split(/\r?\n/).forEach((line, i) => {
+      const v = line.split(',')[0].trim();
+      if (!v || (i === 0 && v.toLowerCase() === 'uuid')) return;
+      if (!re.test(v)) { invalid++; return; }
+      if (seen.has(v)) { dupes++; return; }
+      seen.add(v);
+    });
+    const notes = [];
+    if (dupes) notes.push(`${seFmt(dupes)} duplicate${dupes > 1 ? 's' : ''} will be removed`);
+    if (invalid) notes.push(`${seFmt(invalid)} line${invalid > 1 ? 's aren’t' : ' isn’t'} a UUID and will be skipped`);
+    seCountBox(`<span style="font-size:18px;font-weight:600;color:var(--success);">${seFmt(seen.size)}</span> users in ${seEsc(file.name)}
+      ${notes.length ? `<div style="color:var(--warn);margin-top:4px;">${seEsc(notes.join(' · '))}</div>` : ''}
+      ${seen.size === 0 ? '<div style="color:var(--danger);margin-top:4px;">No UUIDs found. Put one UUID per line.</div>' : ''}`);
+  };
+  reader.readAsText(file);
+}
+
+function seInvalidate() {
+  seScheduleCount();
+  sePreviewed = false;
+  document.getElementById('se-btn-create').disabled = true;
+  document.getElementById('se-summary').innerHTML = 'Fill in the campaign and click Check Details.';
+  seMsg();
+}
+
+function seForm() {
+  const fd = new FormData();
+  fd.set('ticket', document.getElementById('se-ticket').value.trim());
+  fd.set('pilot_id', document.getElementById('se-pilot').value.trim());
+  fd.set('env', seEnv || '');
+  fd.set('event_type', document.getElementById('se-season').value);
+  fd.set('send_date', document.getElementById('se-date').value);
+  fd.set('send_time', document.getElementById('se-time').value);
+  fd.set('user_source', seSource);
+  fd.set('exclude_no_email', document.getElementById('se-f-email').checked);
+  fd.set('exclude_notifications_disabled', document.getElementById('se-f-notif').checked);
+  fd.set('exclude_test_users', document.getElementById('se-f-test').checked);
+  fd.set('skip_subscription_check', seSkip);
+  fd.set('skip_ack', document.getElementById('se-skip-ack').checked);
+  if (seSource === 'starburst') {
+    fd.set('sb_user', document.getElementById('se-sb-user').value.trim());
+    fd.set('sb_password', document.getElementById('se-sb-pass').value);
+  }
+  const file = document.getElementById('se-file').files[0];
+  if (seSource === 'upload' && file) fd.set('user_file', file);
+  return fd;
+}
+
+async function sePreview() {
+  const btn = document.getElementById('se-btn-check');
+  btn.disabled = true; btn.textContent = 'Checking…';
+  seMsg('warn', seSource === 'starburst'
+    ? 'Counting users in Starburst… this can take up to a minute for large pilots.'
+    : 'Reading the uploaded list…');
+  try {
+    const d = await seCall('/api/seasonal/preview', { method: 'POST', body: seForm() });
+    const row = (k, v) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);"><span style="color:var(--muted);">${k}</span><span style="font-family:var(--mono);text-align:right;word-break:break-all;">${seEsc(v)}</span></div>`;
+    const warns = [...(d.ticket.warnings || [])];
+    if (d.duplicates) warns.push(`${seFmt(d.duplicates)} duplicate UUIDs will be removed.`);
+    if (d.invalid_count) warns.push(`${seFmt(d.invalid_count)} lines aren’t UUIDs and will be skipped (e.g. ${d.invalid_sample.join(', ')}).`);
+    document.getElementById('se-summary').innerHTML =
+      `<div style="font-size:15px;line-height:1.5;color:inherit;margin-bottom:10px;">Send the <b>${seEsc(seSeason(document.getElementById('se-season').value))}</b> email to <b>${seFmt(d.user_count)}</b> ${seEsc(d.pilot_name)} users at <b>${seEsc(d.when.ist)}</b>.</div>` +
+      row('Environment', `${d.env} (${d.script_env})`) +
+      row('UTC / US East', `${d.when.utc} / ${d.when.us_east}`) +
+      row('scheduledTime', d.when.epoch) +
+      (d.enabled_count !== undefined ? row('Enabled users', `${seFmt(d.enabled_count)} before filters`) : '') +
+      row('Folder', d.path) +
+      row('Script', d.script_name) +
+      row('User file' + (d.csv_files.length > 1 ? 's' : ''), d.csv_files.join(', ')) +
+      row('Jenkins job', d.jenkins_job) +
+      row('Ticket', d.ticket.summary ? `${document.getElementById('se-ticket').value.toUpperCase()}: ${d.ticket.summary}` : d.ticket.status) +
+      warns.map(w => `<div style="margin-top:8px;font-size:11.5px;color:var(--warn);">⚠ ${seEsc(w)}</div>`).join('');
+    sePreviewed = d.user_count > 0;
+    document.getElementById('se-btn-create').disabled = !sePreviewed;
+    seResult(d);
+  } catch (e) { seMsg('bad', e.message); }
+  finally { btn.disabled = false; btn.textContent = 'Check Details'; }
+}
+
+// Result right under the buttons, so the count is visible without scrolling to Summary.
+function seResult(d) {
+  const filtered = d.enabled_count !== undefined && d.enabled_count !== d.user_count
+    ? ` <span style="color:var(--muted);">(${seFmt(d.enabled_count)} enabled before filters)</span>` : '';
+  document.getElementById('se-msg').innerHTML =
+    `<div style="margin-top:4px;padding:12px 14px;border:1px solid rgba(62,207,142,0.35);background:rgba(62,207,142,0.07);border-radius:8px;line-height:1.6;">
+       <div style="font-size:20px;font-weight:600;color:var(--success);">${seFmt(d.user_count)} users</div>
+       <div style="font-size:12.5px;">${seEsc(d.pilot_name)} · ${seEsc(seSeason(document.getElementById('se-season').value))} · ${seEsc(d.env)} · ${seEsc(d.when.ist)}${filtered}</div>
+       <div style="font-size:11.5px;color:var(--muted);font-family:var(--mono);margin-top:4px;">${seEsc(d.path)}${seEsc(d.script_name)} · ${seEsc(d.csv_files.join(', '))} · ${seEsc(d.jenkins_job)}</div>
+       ${d.user_count === 0 ? '<div style="font-size:12px;color:var(--danger);margin-top:4px;">No users match. Check the pilot ID, environment and filters.</div>' : ''}
+     </div>`;
+}
+
+async function seCreate() {
+  if (!sePreviewed) return;
+  const btn = document.getElementById('se-btn-create');
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Creating…';
+  try {
+    const { run } = await seCall('/api/seasonal/runs', { method: 'POST', body: seForm() });
+    seMsg('ok', seConfig.modes.github
+      ? `PR opened for ${run.script_name}. Merge it, then trigger the run on the right.`
+      : `Files ready for ${run.script_name}. Download them from the run on the right, raise the Utils PR, then mark it merged.`);
+    sePreviewed = false;
+    seLoadRuns();
+  } catch (e) { seMsg('bad', e.message); btn.disabled = false; }
+  finally { btn.textContent = label; }
+}
+
+const SE_STEPS = [['PR_OPEN', 'PR'], ['READY', 'Merged'], ['QUEUED', 'Triggered'], ['RUNNING', 'Running'], ['SUCCESS', 'Scheduled']];
+function seTrack(state) {
+  const s = state === 'MANUAL' ? 'QUEUED' : state;
+  const idx = SE_STEPS.findIndex(x => x[0] === s);
+  const failed = ['FAILED', 'ERROR', 'CANCELLED'].includes(state);
+  return `<div style="display:flex;flex-wrap:wrap;gap:4px;margin:8px 0;">` + SE_STEPS.map(([k, label], i) => {
+    const done = s === 'SUCCESS' || (idx >= 0 && i < idx), now = i === idx && s !== 'SUCCESS';
+    const style = done ? 'background:rgba(62,207,142,0.12);color:var(--success);border-color:rgba(62,207,142,0.3);'
+               : now ? 'color:var(--accent2);border-color:var(--accent2);font-weight:600;' : 'color:var(--muted);';
+    return `<span style="font-size:10.5px;font-family:var(--mono);padding:2px 8px;border:1px solid rgba(255,255,255,0.1);border-radius:4px;${style}">${label}</span>`;
+  }).join('') + (failed ? `<span style="font-size:10.5px;font-family:var(--mono);padding:2px 8px;border:1px solid rgba(255,90,90,0.4);border-radius:4px;color:var(--danger);font-weight:600;">${state}</span>` : '') + `</div>`;
+}
+
+function seRunHTML(r) {
+  const id = seEsc(r.run_id);
+  const link = (url, text) => url && !url.startsWith('file:') ? `<a href="${seEsc(url)}" target="_blank" rel="noopener" style="color:var(--accent2);">${seEsc(text)}</a>` : '';
+  let actions = '';
+  if (r.state === 'PR_OPEN' && r.files_zip) {
+    actions = `<div style="margin-top:6px;">
+      <a href="/api/seasonal/runs/${encodeURIComponent(r.run_id)}/files" style="color:var(--accent2);">Download ${seEsc(r.script_name)} + user file</a>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+        <input class="form-input" data-pr placeholder="PR link (optional)" style="flex:1;min-width:160px;font-family:var(--mono);font-size:11.5px;">
+        <button class="btn btn-outline btn-sm" data-act="merged">Mark PR Merged</button></div></div>`;
+  } else if (r.state === 'READY') {
+    actions = `<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
+      <input class="form-input" data-ip placeholder="DevTools IP (blank = auto)" style="flex:1;min-width:160px;font-family:var(--mono);font-size:11.5px;">
+      <button class="btn se-btn-primary btn-sm" data-act="trigger">${seConfig && seConfig.modes.jenkins ? 'Trigger Jenkins' : 'Get Jenkins Parameters'}</button></div>`;
+  } else if (r.state === 'MANUAL' && r.manual_params) {
+    const p = r.manual_params;
+    actions = `<div style="margin-top:6px;">Open <a href="${seEsc(p.job_url)}" target="_blank" rel="noopener" style="color:var(--accent2);">${seEsc(r.jenkins_job)}</a> → Build with Parameters:
+      <div style="font-family:var(--mono);font-size:11.5px;margin:6px 0;line-height:1.9;">` +
+      ['FOLDER', 'SCRIPT', 'API_TOKEN', 'IP', 'JIRA_REQUEST_ID'].map(k =>
+        `<div><span style="color:var(--muted);display:inline-block;width:130px;">${k}</span>${seEsc(p[k])}${k === 'API_TOKEN' ? '' : ` <button class="btn btn-outline btn-sm" data-copy="${seEsc(p[k])}" style="padding:0 6px;font-size:10px;">Copy</button>`}</div>`).join('') +
+      `</div><div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <input class="form-input" data-build placeholder="Jenkins build link" style="flex:1;min-width:160px;font-family:var(--mono);font-size:11.5px;">
+        <button class="btn se-btn-primary btn-sm" data-act="mark-ok">Mark Scheduled</button>
+        <button class="btn btn-outline btn-sm" data-act="mark-fail">Mark Failed</button></div></div>`;
+  }
+  return `<div class="se-run" data-id="${id}" style="padding:12px 0;border-top:1px solid rgba(255,255,255,0.06);color:inherit;">
+    <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+      <div><b>${seEsc(r.pilot_name)}</b> · ${seEsc(seSeason(r.event_type))} · ${seFmt(r.user_count)} users · ${seEsc(r.env)}</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);">${seEsc(r.ticket)}</div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:2px;">${seEsc(r.send_date)} ${seEsc(r.send_time)} IST · ${seEsc(r.folder)}/${seEsc(r.script_name)} · ${seEsc(r.created_by)}</div>
+    ${seTrack(r.state)}
+    ${r.error ? `<div style="font-size:11.5px;color:var(--danger);">${seEsc(r.error)}</div>` : ''}
+    ${actions}
+    <div style="display:flex;gap:10px;align-items:center;margin-top:8px;font-size:11.5px;flex-wrap:wrap;">
+      ${link(r.pr_url, r.pr_number ? `PR #${r.pr_number}` : 'PR')}
+      ${link(r.jenkins_build_url, r.jenkins_build_number ? `Build #${r.jenkins_build_number}` : 'Build')}
+      ${r.target_ip ? `<span style="color:var(--muted);font-family:var(--mono);">${seEsc(r.target_ip)}</span>` : ''}
+      ${['PR_OPEN', 'QUEUED', 'RUNNING'].includes(r.state) && !r.files_zip ? `<button class="btn btn-outline btn-sm" data-act="refresh">Check Status</button>` : ''}
+      ${r.jenkins_build_url && seConfig && seConfig.modes.jenkins ? `<button class="btn btn-outline btn-sm" data-act="console">Console</button>` : ''}
+      <button class="btn btn-outline btn-sm" data-act="audit" aria-expanded="false">Audit</button>
+    </div>
+    <div data-audit style="display:none;margin-top:8px;">${seAuditHTML(r)}</div>
+    <div data-out style="font-size:11.5px;color:var(--danger);margin-top:6px;"></div>
+  </div>`;
+}
+
+// Who did what and when, for one run (from the run's own history on the server).
+function seAuditHTML(r) {
+  const when = (iso) => new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const facts = [
+    ['Run ID', r.run_id], ['Created', `${when(r.created_at)} by ${r.created_by}`],
+    r.triggered_at ? ['Triggered', `${when(r.triggered_at)} by ${r.triggered_by}`] : null,
+    r.finished_at ? ['Finished', when(r.finished_at)] : null,
+    ['Pilot', `${r.pilot_name} (${r.pilot_id})`], ['Environment', r.env], ['Event', r.event_type],
+    ['Send time', `${r.send_date} ${r.send_time} IST (epoch ${r.epoch})`],
+    ['Users', `${seFmt(r.user_count)} from ${r.user_source === 'starburst' ? 'Starburst' : 'uploaded list'}`],
+    ['Skip subscription check', r.skip_subscription_check ? 'on' : 'off'],
+    ['Files', `${seConfig ? seConfig.scripts_dir : 'prod-one-time-scripts'}/${r.folder}/${r.script_name} + ${r.csv_files.join(', ')}`],
+    r.target_ip ? ['DevTools server', `${r.target_ip} (${r.target_tag})`] : null,
+    r.jenkins_build_url ? ['Jenkins build', r.jenkins_build_url] : null,
+    ['Ticket', r.ticket],
+  ].filter(Boolean);
+  const steps = (r.history || []).slice().reverse().map(h =>
+    `<div style="display:flex;gap:10px;padding:3px 0;"><span style="color:var(--muted);white-space:nowrap;">${seEsc(when(h.at))}</span><span>${seEsc(h.msg)}</span></div>`).join('');
+  return `<div style="border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:10px 12px;font-size:11.5px;">
+    <div style="font-family:var(--mono);line-height:1.8;">${facts.map(([k, v]) =>
+      `<div><span style="color:var(--muted);display:inline-block;min-width:170px;">${seEsc(k)}</span>${seEsc(v)}</div>`).join('')}</div>
+    <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);">
+      <div style="color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;margin-bottom:4px;">History (newest first)</div>
+      ${steps || '<span style="color:var(--muted);">No history recorded.</span>'}
+    </div></div>`;
+}
+
+const seOpenAudits = new Set();   // keep audits open across the 30-second refresh
+
+function seUpdateStats(runs) {
+  document.getElementById('se-stat-runs').textContent = runs.length;
+  if (!runs.length) return;
+  const r = runs[0];
+  document.getElementById('se-stat-lastrun').textContent = new Date(r.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+  document.getElementById('se-stat-lastrun-sub').textContent = `${r.pilot_name} · ${seSeason(r.event_type)}`;
+  const labels = { PR_OPEN: 'PR Open', READY: 'Merged', QUEUED: 'Triggered', MANUAL: 'In Jenkins', RUNNING: 'Running', SUCCESS: 'Scheduled', FAILED: 'Failed', ERROR: 'Error', CANCELLED: 'Cancelled' };
+  const st = document.getElementById('se-stat-status');
+  st.textContent = labels[r.state] || r.state;
+  st.style.color = r.state === 'SUCCESS' ? 'var(--success)' : ['FAILED', 'ERROR'].includes(r.state) ? 'var(--danger)' : '';
+  document.getElementById('se-stat-status-sub').textContent = `${r.send_date} ${r.send_time} IST`;
+}
+
+async function seLoadRuns() {
+  const box = document.getElementById('se-runs');
+  try {
+    const { runs } = await seCall('/api/seasonal/runs');
+    seUpdateStats(runs);
+    box.innerHTML = runs.length ? runs.map(seRunHTML).join('') : 'No runs yet.';
+    seOpenAudits.forEach(id => {
+      const el = box.querySelector(`.se-run[data-id="${CSS.escape(id)}"]`);
+      if (!el) return;
+      el.querySelector('[data-audit]').style.display = 'block';
+      const b = el.querySelector('button[data-act="audit"]');
+      b.textContent = 'Hide Audit'; b.setAttribute('aria-expanded', 'true');
+    });
+  } catch (e) { box.innerHTML = `<span style="color:var(--danger);">${seEsc(e.message)}</span>`; }
+}
+
+document.addEventListener('click', async (ev) => {
+  const copy = ev.target.closest('#se-runs button[data-copy]');
+  if (copy) { navigator.clipboard?.writeText(copy.dataset.copy); copy.textContent = 'Copied'; setTimeout(() => { copy.textContent = 'Copy'; }, 1500); return; }
+  const btn = ev.target.closest('#se-runs button[data-act]');
+  if (!btn) return;
+  const el = btn.closest('.se-run'), id = encodeURIComponent(el.dataset.id), out = el.querySelector('[data-out]');
+  const json = (body) => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const val = (sel) => (el.querySelector(sel)?.value || '').trim() || null;
+  if (btn.dataset.act === 'audit') {
+    const box = el.querySelector('[data-audit]'), open = box.style.display === 'none';
+    box.style.display = open ? 'block' : 'none';
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.textContent = open ? 'Hide Audit' : 'Audit';
+    open ? seOpenAudits.add(el.dataset.id) : seOpenAudits.delete(el.dataset.id);
+    return;
+  }
+  btn.disabled = true; out.textContent = '';
+  try {
+    const act = btn.dataset.act;
+    if (act === 'refresh') await seCall(`/api/seasonal/runs/${id}/refresh`, { method: 'POST' });
+    if (act === 'merged') await seCall(`/api/seasonal/runs/${id}/pr-merged`, json({ pr_url: val('[data-pr]') }));
+    if (act === 'mark-ok' || act === 'mark-fail')
+      await seCall(`/api/seasonal/runs/${id}/mark`, json({ result: act === 'mark-ok' ? 'SUCCESS' : 'FAILED', build_url: val('[data-build]') }));
+    if (act === 'trigger') {
+      const typed = val('[data-ip]');
+      const t = await seCall(`/api/seasonal/runs/${id}/target`);
+      if (t.error && !typed) throw new Error(t.error);
+      const ip = typed || t.ips[0] || 'none found';
+      if (seConfig.modes.jenkins && !confirm(`Run ${t.job} on DevTools server ${ip} (${t.tag})?\n\nThis schedules real customer emails.`)) return;
+      await seCall(`/api/seasonal/runs/${id}/trigger`, json({ ip_override: typed }));
+    }
+    if (act === 'console') {
+      const c = await seCall(`/api/seasonal/runs/${id}/console`);
+      document.getElementById('se-console').textContent = c.console || 'No output yet.';
+      return;
+    }
+    await seLoadRuns();
+  } catch (e) { out.textContent = e.message; }
+  finally { btn.disabled = false; }
+});
+
+// keyboard access for the env-btn style choices and the toggle
+document.addEventListener('keydown', (ev) => {
+  if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.closest('#page-seasonal [role=button], #page-seasonal [role=switch]')) {
+    ev.preventDefault(); ev.target.click();
+  }
+});
+
+setInterval(() => { if (document.getElementById('page-seasonal')?.classList.contains('active')) seLoadRuns(); }, 30000);
+
 </script>
 </body>
 </html>

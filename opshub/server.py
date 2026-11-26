@@ -81,6 +81,7 @@ except ImportError:
 # it's a standalone module you can also run by hand from the command line, and
 # this server just imports it rather than duplicating its logic inline.
 import sqs_monitor
+import ps_dashboard
 
 from her_revocation import (
     REVOKE_API_CONFIG, get_env_token as get_her_revoke_token, revoke_many,
@@ -1092,6 +1093,20 @@ def queue_metrics():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+@app.route('/api/ps-dashboard', methods=['GET'])
+@login_required
+def ps_dashboard_data():
+    """Live Jira data for the PS Dashboard tab (cached 30s, shared by everyone)."""
+    force = request.args.get('refresh') == '1'
+    try:
+        return jsonify(ps_dashboard.get_data(force=force))
+    except ps_dashboard.NotConfigured as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 503
+    except Exception as e:
+        log.exception('PS dashboard Jira fetch error')
+        return jsonify({'status': 'error', 'message': 'Jira request failed'}), 502
+
+
 # ─── HER REVOCATION ──────────────────────────────────────────────
 # The actual revoke logic, token storage, and audit log all live in
 # her_revocation.py — these routes are a thin admin-only wrapper around it.
@@ -1590,6 +1605,50 @@ def her_audit_log():
         limit = 200
     entries = get_her_audit_log(limit=limit, ticket=ticket, env=env, actor=actor)
     return jsonify({'status': 'ok', 'entries': entries})
+
+
+# ─── SEASONAL EMAIL TAB ──────────────────────────────────────────
+# Lives in seasonal_email.py (next to this file), like HER Revocation. Same
+# access as HER Revocation (admin + PS). The DevTools IP lookup uses the same
+# cross-account roles as SQS (<ENV>_DESTINATION_ROLE_ARN) when one is set, and
+# finished runs are added to the shared Run History tab.
+import seasonal_email
+
+
+def _seasonal_ec2_client(env_code, region):
+    try:
+        role_arn = _destination_role_arn(env_code)
+    except Exception:
+        role_arn = None
+    if role_arn:
+        return _get_cross_account_client('ec2', role_arn, region, env_code)
+    return boto3.client('ec2', region_name=region)
+
+
+def _seasonal_run_history(entry):
+    # Same file the other tabs write to (RUN_LOG_S3_KEY). Unlike _load_run_log,
+    # a failed S3 read is NOT treated as an empty log here, so a hiccup can
+    # never overwrite the existing Run History with just this one entry.
+    entry = {'id': uuid.uuid4().hex, 'timestamp': datetime.now(timezone.utc).isoformat(), **entry}
+    with _run_log_lock:
+        try:
+            obj = get_s3_client().get_object(Bucket=RUN_LOG_S3_BUCKET, Key=RUN_LOG_S3_KEY)
+            entries = json.loads(obj['Body'].read())
+        except ClientError as e:
+            if e.response.get('Error', {}).get('Code') not in ('NoSuchKey', '404'):
+                raise
+            entries = []
+        entries.insert(0, entry)
+        _save_run_log(_prune_run_log(entries))
+
+
+seasonal_email.register_routes(
+    app, admin_or_ps_required,
+    get_user=lambda: session['user']['email'],
+    ec2_client_factory=_seasonal_ec2_client,
+    run_history_writer=_seasonal_run_history,
+)
+# ─── END SEASONAL EMAIL TAB ──────────────────────────────────────
 
 
 if __name__ == '__main__':

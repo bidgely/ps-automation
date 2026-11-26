@@ -1,0 +1,5 @@
+
+# local secrets and installer backups
+.env
+opshub/.env
+*.bak-seasonal

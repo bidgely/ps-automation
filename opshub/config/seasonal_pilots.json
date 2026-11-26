@@ -1,0 +1,112 @@
+{
+  "_readme": "Optional. Any pilot ID works on the Seasonal Email tab; a profile here only fills in defaults and the display name. Files are named from the pilot ID (10106 -> 10106_winter.sh / 10106_winter.csv). env is NA2, NA, CA or EU. default_send_time_ist is HH:MM in IST.",
+  "pilots": [
+    {
+      "pilot_id": 10106,
+      "name": "PPL",
+      "aliases": [
+        "Pennsylvania Power"
+      ],
+      "env": "NA2",
+      "default_send_time_ist": "22:30",
+      "default_filters": {
+        "exclude_no_email": false,
+        "exclude_notifications_disabled": false,
+        "exclude_test_users": false
+      },
+      "skip_subscription_check_default": true,
+      "notes": "Winter 2026 sent 26 Oct, 10:30 PM IST (EEOPS-70)."
+    },
+    {
+      "pilot_id": 10057,
+      "name": "Ameren Residential",
+      "aliases": [
+        "AMEREN RES",
+        "AEE"
+      ],
+      "env": "NA",
+      "default_filters": {
+        "exclude_no_email": false,
+        "exclude_notifications_disabled": false,
+        "exclude_test_users": false
+      },
+      "skip_subscription_check_default": true,
+      "notes": "2025 summer used 'same cluster as last year' (AMEREN-249); upload that list.",
+      "to_confirm": [
+        "NA vs NA2"
+      ]
+    },
+    {
+      "pilot_id": 10053,
+      "name": "Ameren SMB",
+      "aliases": [
+        "AMEREN SMB",
+        "AEE"
+      ],
+      "env": "NA",
+      "default_filters": {
+        "exclude_no_email": false,
+        "exclude_notifications_disabled": false,
+        "exclude_test_users": false
+      },
+      "skip_subscription_check_default": true,
+      "to_confirm": [
+        "NA vs NA2"
+      ]
+    },
+    {
+      "pilot_id": 10097,
+      "name": "NWN Washington",
+      "aliases": [
+        "NWN",
+        "NW Natural"
+      ],
+      "env": "NA",
+      "default_filters": {
+        "exclude_no_email": true,
+        "exclude_notifications_disabled": false,
+        "exclude_test_users": false
+      },
+      "skip_subscription_check_default": true,
+      "notes": "Qualifying customers are EE users with an active email (INTPSN-5795).",
+      "to_confirm": [
+        "NA vs NA2"
+      ]
+    },
+    {
+      "pilot_id": 10134,
+      "name": "NWN Oregon",
+      "aliases": [
+        "NWNOR",
+        "NWN",
+        "NW Natural"
+      ],
+      "env": "NA2",
+      "default_filters": {
+        "exclude_no_email": false,
+        "exclude_notifications_disabled": false,
+        "exclude_test_users": false
+      },
+      "skip_subscription_check_default": true,
+      "notes": "Run after the 8 PM hotfix window (INTPSN-7616)."
+    },
+    {
+      "pilot_id": 10127,
+      "name": "OUC Residential",
+      "aliases": [
+        "OUC",
+        "Orlando Utilities"
+      ],
+      "env": "NA2",
+      "default_filters": {
+        "exclude_no_email": false,
+        "exclude_notifications_disabled": false,
+        "exclude_test_users": false
+      },
+      "skip_subscription_check_default": true,
+      "to_confirm": [
+        "NA vs NA2"
+      ]
+    }
+  ]
+}
