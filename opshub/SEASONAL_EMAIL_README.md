@@ -49,7 +49,7 @@ Undo: `python3 seasonal_install/install_seasonal.py --undo`
 | `SEASONAL_LOCAL_STORE` | local testing: keep runs on disk instead of S3 |
 | `SEASONAL_DRY_RUN=1` | local testing: stub everything |
 
-The IP lookup uses OpsHub's `_get_cross_account_client` with `<ENV>_DESTINATION_ROLE_ARN` when set. That role needs `ec2:DescribeInstances`; if it can't, PS types the IP.
+The IP lookup reuses the SQS Queues tab's AWS client (`_sqs_monitor_client`): same identity and the same `ec2:DescribeInstances` permission it already uses for box counts (NA/NA2 pod role, EU/CA `<ENV>_DESTINATION_ROLE_ARN`). **Check live DevTools server** under the environment buttons tests it. If the lookup fails, PS types the IP.
 
 ## Local test
 

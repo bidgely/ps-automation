@@ -562,3 +562,61 @@ def test_api_token_optional_uses_job_default(se, monkeypatch):
     c.post(f"/api/seasonal/runs/{rid}/refresh")
     c.post(f"/api/seasonal/runs/{rid}/trigger", json={})
     assert sent["API_TOKEN"] == "override"
+
+
+
+def test_devtools_check_endpoint(se, monkeypatch):
+    c = app_for(se)
+    d = c.get("/api/seasonal/devtools?env=NA2").get_json()
+    assert d["ips"] == ["127.0.0.1"] and d["tag"] == "devtoolservices-od" and d["region"] == "us-east-1"
+    assert c.get("/api/seasonal/devtools?env=XX").status_code == 400
+
+    def no_access(self):
+        raise se.IntegrationError("no access")
+    monkeypatch.setattr(se.DevToolsLocator, "live_ips", no_access)
+    d = c.get("/api/seasonal/devtools?env=EU").get_json()
+    assert d["error"] == "no access" and d["region"] == "eu-central-1"
+
+
+def test_installer_reuses_sqs_monitor_client(tmp_path):
+    import shutil
+    d = tmp_path / "opshub"
+    shutil.copytree(ROOT / "seasonal_install", d / "seasonal_install")
+    shutil.copy(ROOT / "seasonal_email.py", d / "seasonal_email.py")
+    (d / "index.html").write_text(
+        '<body>\n'
+        '  <div class="nav-tab" data-tab="herrevoke" onclick="switchTab(\'herrevoke\')">\n'
+        '    <span class="tab-icon">X</span> HER Revocation\n'
+        '  </div>\n'
+        '  <!-- === HER REVOCATION TAB === -->\n'
+        '  <div class="page" id="page-herrevoke"></div>\n'
+        '<script>\n'
+        'const ROLE_CONFIG = {\n'
+        "  admin:    { tabs: ['herrevoke','x'], queueFilter: null },\n"
+        "  user:     { tabs: ['herrevoke','x'], queueFilter: null },\n"
+        '};\n'
+        'function switchTab(tab) {\n'
+        "  if (tab === 'herrevoke') { herLoad(); }\n"
+        '}\n'
+        '</script>\n'
+        '</body>')
+    (d / "server.py").write_text(
+        "import boto3\n"
+        "app = None\n"
+        "def admin_or_ps_required(f): return f\n"
+        "def _destination_role_arn(env): return None\n"
+        "def _get_cross_account_client(service, role_arn, region, env, config=None): pass\n"
+        "def _sqs_monitor_client(cred, region, service, config): return (cred, region, service)\n"
+        "\n"
+        "if __name__ == '__main__':\n"
+        "    pass\n")
+    r = subprocess.run([sys.executable, "seasonal_install/install_seasonal.py"], cwd=d, capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    py = (d / "server.py").read_text()
+    assert "return _sqs_monitor_client(cred, region, 'ec2', None)" in py and "boto3.client('ec2'" not in py
+    head = py.split("import seasonal_email")[0]
+    fn = py.split("import seasonal_email")[1].split("seasonal_email.register_routes")[0]
+    ns = {}
+    exec(compile(head + fn, "server_test", "exec"), ns)
+    assert ns["_seasonal_ec2_client"]("NA2", "us-east-1") == ("NA", "us-east-1", "ec2")
+    assert ns["_seasonal_ec2_client"]("CA", "ca-central-1") == ("CA", "ca-central-1", "ec2")

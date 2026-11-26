@@ -1120,6 +1120,16 @@ def register_routes(app, guard, get_user: Callable[[], str], ec2_client_factory=
                         "job": loc.cfg["jenkins_job"]})
 
     @handle
+    def devtools():
+        loc = DevToolsLocator(request.args.get("env", ""))
+        try:
+            ips, err = loc.live_ips(), None
+        except IntegrationError as e:
+            ips, err = [], str(e)
+        return jsonify({"status": "ok", "env": loc.cfg["code"], "region": loc.cfg["aws_region"],
+                        "tag": loc.cfg["devtools_tag"], "ips": ips, "error": err})
+
+    @handle
     def trigger(run_id):
         body = request.get_json(silent=True) or {}
         return run_json(trigger_run(store.get(run_id), get_user(), body.get("ip_override")))
@@ -1157,6 +1167,7 @@ def register_routes(app, guard, get_user: Callable[[], str], ec2_client_factory=
         ("/api/seasonal/runs/<run_id>", get_run, ["GET"]),
         ("/api/seasonal/runs/<run_id>/refresh", refresh, ["POST"]),
         ("/api/seasonal/runs/<run_id>/target", target, ["GET"]),
+        ("/api/seasonal/devtools", devtools, ["GET"]),
         ("/api/seasonal/runs/<run_id>/trigger", trigger, ["POST"]),
         ("/api/seasonal/runs/<run_id>/pr-merged", pr_merged, ["POST"]),
         ("/api/seasonal/runs/<run_id>/mark", mark, ["POST"]),

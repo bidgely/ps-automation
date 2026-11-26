@@ -49,14 +49,7 @@ SERVER_BLOCK = '''
 import seasonal_email
 
 
-def _seasonal_ec2_client(env_code, region):
-    try:
-        role_arn = _destination_role_arn(env_code)
-    except Exception:
-        role_arn = None
-    if role_arn:
-        return _get_cross_account_client('ec2', role_arn, region, env_code)
-    return boto3.client('ec2', region_name=region)
+__EC2_FN__
 __RUN_HISTORY_FN__
 
 
@@ -68,6 +61,22 @@ seasonal_email.register_routes(
 # ─── END SEASONAL EMAIL TAB ──────────────────────────────────────
 
 '''
+
+EC2_FN_SQS = """def _seasonal_ec2_client(env_code, region):
+    # Same identity and cached clients the SQS Queues tab uses for its box
+    # counts (ec2:DescribeInstances): NA/NA2 use the pod's own role, EU/CA
+    # their <ENV>_DESTINATION_ROLE_ARN.
+    cred = 'NA' if env_code in ('NA', 'NA2') else env_code
+    return _sqs_monitor_client(cred, region, 'ec2', None)"""
+
+EC2_FN_DIRECT = """def _seasonal_ec2_client(env_code, region):
+    try:
+        role_arn = _destination_role_arn(env_code)
+    except Exception:
+        role_arn = None
+    if role_arn:
+        return _get_cross_account_client('ec2', role_arn, region, env_code)
+    return boto3.client('ec2', region_name=region)"""
 
 RUN_HISTORY_FN = '''
 
@@ -175,7 +184,8 @@ def patch_index(html: str) -> str:
 
 def server_block(py: str) -> str:
     has_history = all(x in py for x in ("def _save_run_log", "def _prune_run_log", "_run_log_lock", "RUN_LOG_S3_KEY"))
-    block = SERVER_BLOCK.replace("__RUN_HISTORY_FN__", RUN_HISTORY_FN if has_history else "")
+    block = SERVER_BLOCK.replace("__EC2_FN__", EC2_FN_SQS if "def _sqs_monitor_client" in py else EC2_FN_DIRECT)
+    block = block.replace("__RUN_HISTORY_FN__", RUN_HISTORY_FN if has_history else "")
     block = block.replace("__RUN_HISTORY_ARG__", "\n    run_history_writer=_seasonal_run_history," if has_history else "")
     if not has_history:
         print("• server.py has no shared Run History (run_log) here — Seasonal runs won't be added to it")

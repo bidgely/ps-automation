@@ -33,8 +33,22 @@ async function seLoad() {
 function seSelectEnv(code) {
   seEnv = code;
   document.querySelectorAll('#se-env-selector .env-btn').forEach(b => b.classList.toggle('active', b.dataset.env === code));
+  const dt = document.getElementById('se-dt-result'); if (dt) dt.textContent = '';
   seStarburstHint();
   seInvalidate();
+}
+
+async function seCheckDevtools() {
+  const out = document.getElementById('se-dt-result');
+  if (!seEnv) { out.textContent = 'Choose an environment first.'; return; }
+  out.style.color = 'var(--muted)'; out.textContent = `Looking up ${seEnv}…`;
+  try {
+    const d = await seCall(`/api/seasonal/devtools?env=${encodeURIComponent(seEnv)}`);
+    if (d.error) { out.style.color = 'var(--danger)'; out.textContent = d.error; return; }
+    if (!d.ips.length) { out.style.color = 'var(--warn)'; out.textContent = `No running ${d.tag} server in ${d.env} (${d.region}).`; return; }
+    out.style.color = d.ips.length === 1 ? 'var(--success)' : 'var(--warn)';
+    out.textContent = `${d.env}: ${d.ips.join(', ')} (${d.tag})` + (d.ips.length > 1 ? ' — more than one, you’ll pick one when triggering' : '');
+  } catch (e) { out.style.color = 'var(--danger)'; out.textContent = e.message; }
 }
 
 function seStarburstHint() {

@@ -1616,13 +1616,11 @@ import seasonal_email
 
 
 def _seasonal_ec2_client(env_code, region):
-    try:
-        role_arn = _destination_role_arn(env_code)
-    except Exception:
-        role_arn = None
-    if role_arn:
-        return _get_cross_account_client('ec2', role_arn, region, env_code)
-    return boto3.client('ec2', region_name=region)
+    # Same identity and cached clients the SQS Queues tab uses for its box
+    # counts (ec2:DescribeInstances): NA/NA2 use the pod's own role, EU/CA
+    # their <ENV>_DESTINATION_ROLE_ARN.
+    cred = 'NA' if env_code in ('NA', 'NA2') else env_code
+    return _sqs_monitor_client(cred, region, 'ec2', None)
 
 
 def _seasonal_run_history(entry):
