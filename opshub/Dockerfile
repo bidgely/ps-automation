@@ -21,6 +21,10 @@ COPY her_revocation.py .
 # queue_boxes.json maps each queue to the EC2 instances that process it.
 COPY sqs_monitor.py .
 COPY queue_boxes.json .
+# starburst_ids.py backs the HER tab's "Fetch from Starburst" lookup — server.py
+# imports it at startup, so leaving it out of the image crashes the whole app
+# with a ModuleNotFoundError (same failure mode as her_revocation.py above).
+COPY starburst_ids.py .
 
 # Flask app listens on 8080 (matches the Google OAuth redirect URI already
 # registered as http://localhost:8080/auth/callback)
