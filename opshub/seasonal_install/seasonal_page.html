@@ -1,0 +1,171 @@
+  <!-- ═══════════════════════ SEASONAL EMAIL TAB ═══════════════════════ -->
+  <!-- Backend: seasonal_email.py (routes registered in server.py) -->
+  <div class="page" id="page-seasonal">
+    <div class="page-header">
+      <div class="page-title">Seasonal Email</div>
+      <div class="page-sub">Schedule a summer or winter seasonal email — builds the script and user list, opens the Utils PR, then runs the Jenkins job</div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;border-color:rgba(245,166,35,0.3);">
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:220px;">
+          <label class="form-label" for="se-ticket">Ticket Number <span style="color:var(--danger);">*</span></label>
+          <input class="form-input" type="text" id="se-ticket" placeholder="e.g. EEOPS-70" autocomplete="off" style="font-family:var(--mono);font-size:13px;" oninput="seInvalidate()">
+        </div>
+        <div style="font-size:11px;color:var(--muted);max-width:320px;padding-top:18px;">The pilot’s ticket. Saved with the run, and updates are posted to it once Jira is connected</div>
+      </div>
+    </div>
+
+    <div class="grid-3" style="margin-bottom:20px;">
+      <div class="stat-card">
+        <div class="stat-label">Last Run</div>
+        <div class="stat-val" id="se-stat-lastrun">—</div>
+        <div class="stat-sub" id="se-stat-lastrun-sub">No runs yet</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Runs</div>
+        <div class="stat-val" id="se-stat-runs">0</div>
+        <div class="stat-sub">Seasonal email runs</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Last Status</div>
+        <div class="stat-val" id="se-stat-status" style="font-size:16px;padding-top:6px;">—</div>
+        <div class="stat-sub" id="se-stat-status-sub">Awaiting execution</div>
+      </div>
+    </div>
+
+    <div style="padding:10px 14px;background:rgba(255,90,90,0.06);border:1px solid rgba(255,90,90,0.2);border-radius:8px;font-size:12px;color:var(--danger);font-family:var(--mono);margin-bottom:20px;line-height:1.7;">
+      ⚠ These emails go to real customers. Check the pilot, environment, send time and user count before triggering.
+    </div>
+
+    <div class="grid-2" style="align-items:start;">
+
+      <!-- LEFT: CONFIG -->
+      <div>
+        <div class="card">
+          <div class="card-title">Environment</div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Environment</label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;" id="se-env-selector">
+              <div class="env-btn" data-env="NA2" onclick="seSelectEnv('NA2')" role="button" tabindex="0">
+                <div style="font-size:13px;font-weight:500;">NA2</div>
+                <div style="font-size:10px;color:var(--muted);font-family:var(--mono);">run-script-na-2-ps</div>
+              </div>
+              <div class="env-btn" data-env="NA" onclick="seSelectEnv('NA')" role="button" tabindex="0">
+                <div style="font-size:13px;font-weight:500;">NA</div>
+                <div style="font-size:10px;color:var(--muted);font-family:var(--mono);">run-script-na-ps</div>
+              </div>
+              <div class="env-btn" data-env="CA" onclick="seSelectEnv('CA')" role="button" tabindex="0">
+                <div style="font-size:13px;font-weight:500;">CA</div>
+                <div style="font-size:10px;color:var(--muted);font-family:var(--mono);">run-script-ca-ps</div>
+              </div>
+              <div class="env-btn" data-env="EU" onclick="seSelectEnv('EU')" role="button" tabindex="0">
+                <div style="font-size:13px;font-weight:500;">EU</div>
+                <div style="font-size:10px;color:var(--muted);font-family:var(--mono);">run-script-prod-eu-ps</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Campaign</div>
+          <div class="form-group">
+            <label class="form-label" for="se-pilot">Pilot ID <span style="color:var(--danger);">*</span></label>
+            <input class="form-input" type="text" id="se-pilot" inputmode="numeric" placeholder="e.g. 10106" autocomplete="off" style="font-family:var(--mono);" oninput="sePilotChanged()">
+            <div id="se-pilot-hint" style="font-size:11px;color:var(--muted);margin-top:6px;"></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="se-season">Season</label>
+            <select class="form-select" id="se-season" onchange="seInvalidate()">
+              <option value="WINTER_ALERT">Winter (WINTER_ALERT)</option>
+              <option value="SUMMER_ALERT">Summer (SUMMER_ALERT)</option>
+            </select>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" for="se-date">Send Date (IST)</label>
+              <input class="form-input" type="date" id="se-date" onchange="seInvalidate()">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" for="se-time">Send Time (IST)</label>
+              <input class="form-input" type="time" id="se-time" onchange="seInvalidate()">
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">User List</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;" id="se-src-selector">
+            <div class="env-btn active" data-src="starburst" onclick="seSelectSource('starburst')" role="button" tabindex="0">
+              <div style="font-size:13px;font-weight:500;">All active users</div>
+              <div style="font-size:10px;color:var(--muted);font-family:var(--mono);">Starburst · user_meta_data</div>
+            </div>
+            <div class="env-btn" data-src="upload" onclick="seSelectSource('upload')" role="button" tabindex="0">
+              <div style="font-size:13px;font-weight:500;">Upload a list</div>
+              <div style="font-size:10px;color:var(--muted);font-family:var(--mono);">.csv / .txt · one UUID per line</div>
+            </div>
+          </div>
+          <div id="se-src-starburst" style="font-size:12.5px;">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:10px;font-family:var(--mono);">pilot_id = &lt;pilot&gt; AND user_status = 'ENABLED'</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;">
+              <input class="form-input" id="se-sb-user" placeholder="Your Starburst login (optional)" autocomplete="username" aria-label="Starburst login" style="font-family:var(--mono);font-size:12px;" oninput="seInvalidate()">
+              <input class="form-input" type="password" id="se-sb-pass" placeholder="Password" autocomplete="current-password" aria-label="Starburst password" style="font-family:var(--mono);font-size:12px;" oninput="seInvalidate()">
+            </div>
+            <div id="se-sb-hint" style="font-size:11px;color:var(--muted);margin-bottom:12px;">Same as HER Revocation: used for this lookup only and never saved. Leave blank to use OpsHub’s shared Starburst account.</div>
+            <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;cursor:pointer;"><input type="checkbox" id="se-f-email" onchange="seInvalidate()"> Leave out users with no email address</label>
+            <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;cursor:pointer;"><input type="checkbox" id="se-f-notif" onchange="seInvalidate()"> Leave out users with notifications disabled</label>
+            <label style="display:flex;gap:8px;align-items:center;cursor:pointer;"><input type="checkbox" id="se-f-test" onchange="seInvalidate()"> Leave out test users</label>
+          </div>
+          <div id="se-count" style="margin-top:12px;font-size:12.5px;color:var(--muted);" aria-live="polite">Enter a pilot ID and choose the environment to see how many users will get the email.</div>
+          <div id="se-src-upload" style="display:none;">
+            <input class="form-input" type="file" id="se-file" accept=".csv,.txt" onchange="seInvalidate()">
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Options</div>
+          <div class="form-group" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0;">
+            <span>
+              <span class="form-label" style="margin-bottom:2px;">Skip Subscription Check</span>
+              <div style="font-size:11px;color:var(--muted);">Passes <code style="font-family:var(--mono);font-size:11px;color:var(--accent2);">-skipUserSubscriptionsCheck true</code></div>
+            </span>
+            <div class="toggle-switch on" id="se-skip-toggle" onclick="seToggleSkip()" role="switch" aria-checked="true" tabindex="0">
+              <div class="toggle-knob"></div>
+            </div>
+          </div>
+          <label id="se-skip-ack-row" style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:12px;cursor:pointer;">
+            <input type="checkbox" id="se-skip-ack" style="margin-top:2px;" onchange="seInvalidate()">
+            <span>Users get the email even if they’ve unsubscribed. I’ve confirmed this is right for this pilot.</span>
+          </label>
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-outline" id="se-btn-check" onclick="sePreview()">Check Details</button>
+          <button class="btn se-btn-primary" id="se-btn-create" onclick="seCreate()" disabled>Create PR</button>
+        </div>
+        <div id="se-msg" style="margin-top:10px;" role="status" aria-live="polite"></div>
+      </div>
+
+      <!-- RIGHT: SUMMARY + RUNS -->
+      <div>
+        <div class="card">
+          <div class="card-title">Summary</div>
+          <div id="se-summary" style="font-size:13px;color:var(--muted);">Fill in the campaign and click Check Details.</div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <div class="card-title" style="margin-bottom:0;">Runs</div>
+            <button class="btn btn-outline btn-sm" onclick="seLoadRuns()">Refresh</button>
+          </div>
+          <div id="se-runs" style="font-size:12.5px;color:var(--muted);">Loading…</div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Jenkins Console</div>
+          <div class="terminal" id="se-console">Select “Console” on a run to see its Jenkins output.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+

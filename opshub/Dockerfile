@@ -25,6 +25,10 @@ COPY queue_boxes.json .
 # imports it at startup, so leaving it out of the image crashes the whole app
 # with a ModuleNotFoundError (same failure mode as her_revocation.py above).
 COPY starburst_ids.py .
+# OpsHub tabs: PS Dashboard (Jira) and Seasonal Email (+ its pilot defaults).
+COPY ps_dashboard.py .
+COPY seasonal_email.py .
+COPY config/ ./config/
 
 # Flask app listens on 8080 (matches the Google OAuth redirect URI already
 # registered as http://localhost:8080/auth/callback)
