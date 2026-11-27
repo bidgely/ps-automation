@@ -23,6 +23,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
+from urllib.parse import quote
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +37,15 @@ FIELDS = ['summary', 'priority', 'status', 'assignee', 'created']
 
 # section -> order on the page. Filter ids are the saved Jira filters used by the
 # original dashboard.
+# Open BII incidents (project 19255), excluding ones pending on CSM/utility and the
+# automated BRE email-monitoring tickets. Same query as the "BII – Open" view.
+BII_OPEN_JQL = (
+    'project = 19255 AND status not in ("Pending Utility Information", "Pending with CSM", '
+    'Declined, Closed, Cancelled, Resolved) AND NOT (labels = Revamped_BRE_Email_Monitoring '
+    'AND reporter = 712020:c61697c5-092e-451f-b392-f3f947c61023 AND status != "Under investigation")'
+)
+
+# Each entry is a saved Jira filter ('id') or a JQL query ('key' + 'jql').
 FILTERS = [
     # ── Action needed ──
     {'id': 34518, 'name': 'Unassigned',           'section': 'action'},
@@ -43,6 +53,8 @@ FILTERS = [
     {'id': 46987, 'name': 'Action – Critical',    'section': 'action'},
     {'id': 46988, 'name': 'Action – Normal',      'section': 'action'},
     {'id': 46990, 'name': 'BII – Open',           'section': 'action'},
+    {'key': 'bii-blocker',  'name': 'BII – Blocker',  'section': 'action', 'jql': BII_OPEN_JQL + ' AND priority = Blocker'},
+    {'key': 'bii-critical', 'name': 'BII – Critical', 'section': 'action', 'jql': BII_OPEN_JQL + ' AND priority = Critical'},
     {'id': 46984, 'name': 'Created in last 24h',  'section': 'action'},
     {'id': 47001, 'name': 'Aging queue (all action)', 'section': 'action'},
     # ── Pending on others ──
@@ -98,8 +110,13 @@ def _row(issue):
 
 
 def _fetch_filter(flt, auth):
-    jql = 'filter = %d' % flt['id']
-    out = {'id': flt['id'], 'name': flt['name'], 'section': flt['section'],
+    if flt.get('jql'):
+        jql = flt['jql']
+        url = '%s/issues/?jql=%s' % (JIRA_SITE, quote(jql))
+    else:
+        jql = 'filter = %d' % flt['id']
+        url = '%s/issues/?filter=%d' % (JIRA_SITE, flt['id'])
+    out = {'id': flt.get('id') or flt['key'], 'url': url, 'name': flt['name'], 'section': flt['section'],
            'count': 0, 'issues': [], 'error': None, 'truncated': False}
     try:
         issues, token, last = [], None, False
@@ -121,10 +138,10 @@ def _fetch_filter(flt, auth):
             try:
                 out['count'] = int(_post('/rest/api/3/search/approximate-count', {'jql': jql}, auth).get('count', len(issues)))
             except Exception:
-                log.warning('Jira count failed for filter %s', flt['id'])
+                log.warning('Jira count failed for filter %s', out['id'])
     except Exception as e:
         # Never leak the token/URL: log the detail, show only a short reason.
-        log.warning('PS dashboard: filter %s failed: %s', flt['id'], e)
+        log.warning('PS dashboard: filter %s failed: %s', out['id'], e)
         resp = getattr(e, 'response', None)
         out['error'] = 'Jira returned %s' % resp.status_code if resp is not None else 'Could not reach Jira'
     return out

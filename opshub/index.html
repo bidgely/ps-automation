@@ -2496,7 +2496,7 @@ function psdPrio(p) {
 const psdFilterUrl = (site, id) => `${site}/issues/?filter=${id}`;
 
 function psdTile(site, f) {
-  return `<a class="psd-tile ${psdTone(f)}" href="${psdFilterUrl(site, f.id)}" target="_blank" rel="noopener" title="Open filter ${f.id} in Jira">
+  return `<a class="psd-tile ${psdTone(f)}" href="${(f.url || psdFilterUrl(site, f.id))}" target="_blank" rel="noopener" title="Open filter ${f.id} in Jira">
     <div class="n">${f.error ? '—' : f.count.toLocaleString('en-US')}</div><div class="l">${psdEsc(f.name)}${f.error ? ' · ' + psdEsc(f.error) : ''}</div></a>`;
 }
 
@@ -2514,7 +2514,7 @@ function psdTable(site, f) {
       <td class="m psd-age ${cls}">${i.age == null ? '—' : i.age + 'd'}</td></tr>`;
   }).join('');
   const more = f.count > shown.length
-    ? `<div class="psd-more">Showing ${shown.length} of ${f.count.toLocaleString('en-US')} · <a href="${psdFilterUrl(site, f.id)}" target="_blank" rel="noopener">open all in Jira</a></div>` : '';
+    ? `<div class="psd-more">Showing ${shown.length} of ${f.count.toLocaleString('en-US')} · <a href="${(f.url || psdFilterUrl(site, f.id))}" target="_blank" rel="noopener">open all in Jira</a></div>` : '';
   return `<div class="psd-scroll"><table class="psd-t"><thead><tr><th>Key</th><th>Summary</th><th>Priority</th><th>Status</th><th>Assignee</th><th>Age</th></tr></thead><tbody>${body}</tbody></table></div>${more}`;
 }
 
@@ -2522,7 +2522,7 @@ function psdSec(site, f, wide) {
   const k = 'f' + f.id;
   const open = k in psd.open ? psd.open[k] : (!f.error && f.count > 0 && f.count <= 25);
   return `<details class="psd-sec${wide ? ' wide' : ''}" data-k="${k}"${open ? ' open' : ''}>
-    <summary>${psdEsc(f.name)}<span class="psd-pill"><a href="${psdFilterUrl(site, f.id)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${f.error ? '!' : f.count.toLocaleString('en-US')}</a></span></summary>
+    <summary>${psdEsc(f.name)}<span class="psd-pill"><a href="${(f.url || psdFilterUrl(site, f.id))}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${f.error ? '!' : f.count.toLocaleString('en-US')}</a></span></summary>
     ${psdTable(site, f)}</details>`;
 }
 
@@ -2636,6 +2636,8 @@ function psdDemo() {
     F(46987, 'Action – Critical', 'action', mk(4, 'Ravi', 'Critical', 5)),
     F(46988, 'Action – Normal', 'action', mk(9, 'Asha', 'Medium', 9)),
     F(46990, 'BII – Open', 'action', mk(2, 'Ravi', 'Medium', 3)),
+    F('bii-blocker', 'BII – Blocker', 'action', mk(1, 'Ravi', 'Blocker', 2)),
+    F('bii-critical', 'BII – Critical', 'action', mk(1, 'Asha', 'Critical', 4)),
     F(46984, 'Created in last 24h', 'action', mk(3, 'Asha', 'Medium', 0)),
     F(47001, 'Aging queue (all action)', 'action', mk(12, 'Ravi', 'Critical', 15)),
     F(46991, 'Pending – Blocker', 'pending', []),
